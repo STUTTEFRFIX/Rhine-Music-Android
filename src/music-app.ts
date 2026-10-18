@@ -30,6 +30,7 @@ import {
 import { wrap, type ArchiveNavigation } from "./archive-loop";
 import {
   normalizeQuality,
+  presetLabels,
   qualityPresets,
   type QualityPreset,
   type RenderQuality,
@@ -106,6 +107,9 @@ const preferences = {
     sound: true,
     soundVolume: 0.22,
     renderQuality: undefined as RenderQuality | undefined,
+    // Phone render-loop knobs exposed in 设置 → 渲染模式.
+    dynamicResolution: true,
+    idleFrames: true,
     // Bumped when the phone shell changes its own defaults, so a forced V1
     // "performance" choice can be upgraded without touching real user choices.
     mobileShellVersion: 0 as number,
@@ -123,6 +127,8 @@ const preferences = {
       sound: boolean;
       soundVolume: number;
       renderQuality: RenderQuality;
+      dynamicResolution: boolean;
+      idleFrames: boolean;
       mobileShellVersion: number;
     }>
   >("rhine-music-preferences", {}),
@@ -711,7 +717,11 @@ async function applyLibrary() {
         scene.setTheme(preferences.theme);
         scene.setQuality(renderQuality);
         scene.setReduced(preferences.reduced);
-        if (isMobileShell()) scene.enableMobileRendering();
+        if (isMobileShell()) {
+          scene.enableMobileRendering();
+          scene.setDynamicResolution(preferences.dynamicResolution);
+          scene.setIdleFrames(preferences.idleFrames);
+        }
         bindSceneNavigation(scene);
       }
       await scene.refreshLibrary(selected);
@@ -1312,6 +1322,7 @@ function renderSettingsPanel() {
     <section class="panel-section"><h3>音乐库排列</h3><label class="settings-row"><span>排列方式<small>切换后自动刷新页面</small></span><select id="music-sort" aria-label="音乐库排列方式">${(["genre", "artist", "album"] as MusicSortMode[]).map((value) => `<option value="${value}" ${preferences.sortMode === value ? "selected" : ""}>${sortLabels[value].name}</option>`).join("")}</select></label><p>按歌手时，同一歌手的专辑放在同一列；按专辑名时，按拼音或字母顺序排列，每 12 张一列。</p></section>
     <section class="panel-section" id="introduction-settings"><h3>专辑介绍</h3><p>从公开百科查询并更新专辑介绍，附上资料来源。介绍保存在本机，不需要配置 MusicBrainz 联系信息；音乐文件不会上传。</p><p id="introduction-coverage"></p><button class="primary-button" id="introduction-refresh" data-action="introductions-library">查询 / 更新专辑介绍 ↗</button><progress id="introduction-progress" aria-label="专辑介绍查询进度" max="1" value="0" hidden></progress><p id="introduction-status" class="scan-status" role="status" aria-live="polite"></p><details id="introduction-missing" hidden><summary></summary><ul></ul></details></section>
     ${qualityMarkup(renderQuality)}
+    <section class="panel-section" id="render-mode-settings"><h3>渲染模式</h3><p>手机版在「手机」预设之上再提供两个运行时开关；它们只影响性能，不改变版式。</p><label class="settings-row"><span>动态分辨率<small>帧率不足时降低内部渲染比例（0.5×–1×，只降不升）</small></span><input type="checkbox" id="dynamic-resolution-setting" ${preferences.dynamicResolution ? "checked" : ""}></label><label class="settings-row"><span>空闲停帧<small>静止 2.5 秒后停止渲染以省电，触摸即唤醒</small></span><input type="checkbox" id="idle-frames-setting" ${preferences.idleFrames ? "checked" : ""}></label><pre id="render-diagnostics" class="render-diagnostics" role="status" aria-live="polite"></pre><button class="text-button" data-action="refresh-diagnostics">刷新渲染信息 ↗</button></section>
     <section class="panel-section"><h3>动效与显示</h3><label class="settings-row"><span>减少动态效果<small>简化镜头、文字加载和页签过渡</small></span><input type="checkbox" id="reduced-motion" ${preferences.reduced ? "checked" : ""}></label><button class="text-button" data-action="fullscreen">切换全屏 ↗</button></section>
     <section class="panel-section"><h3>声音</h3><label class="settings-row"><span>歌曲音量</span><input type="range" id="volume" aria-label="歌曲音量" min="0" max="100" value="${Math.round(preferences.volume * 100)}"></label><label class="settings-row"><span>切歌淡入淡出<small>当前歌曲先淡出，再淡入下一首</small></span><input type="checkbox" id="song-fade-setting" ${preferences.songFade ? "checked" : ""}></label><label class="settings-row"><span>界面音效<small>玻璃卡片与终端操作</small></span><input type="checkbox" id="sound-setting" ${preferences.sound ? "checked" : ""}></label><label class="settings-row"><span>音效音量</span><input type="range" id="sound-volume" aria-label="音效音量" min="0" max="100" value="${Math.round(preferences.soundVolume * 100)}"></label><label class="settings-row"><span>氛围 BGM<small>专辑开始前淡出，停止后淡入</small></span><input type="checkbox" id="bgm-setting" ${preferences.bgm ? "checked" : ""}></label><label class="settings-row"><span>BGM 音量</span><input type="range" id="bgm-volume" aria-label="BGM 音量" min="0" max="100" value="${Math.round(preferences.bgmVolume * 100)}"></label><button class="text-button" data-action="sound-preview">试听界面音效 ↗</button><p>当前版本支持 Windows 与 macOS，使用浏览器播放本地音乐。DSF / DFF 暂不支持播放，其他格式取决于浏览器解码能力。</p></section>
     <section class="panel-section"><h3>开发与资源</h3><p>Rhine Music · Windows 桌面版 · WebView2 / WebGL 2（ANGLE）图形渲染。</p><p>Windows 版开发者：<a href="https://github.com/Bong712" target="_blank" rel="noopener">Bong712 ↗</a><br>特别鸣谢：<a href="https://github.com/RonaldDeng/Rhine-Music-Demo" target="_blank" rel="noopener">RonaldDeng ↗</a><br>原版界面：<a href="https://github.com/LBEILC/RhineLabUI" target="_blank" rel="noopener">LBEILC / RhineLabUI ↗</a></p><p><a href="/licenses/project-mit.txt" target="_blank" rel="noopener">代码 MIT 许可 ↗</a> · <a href="https://github.com/Bong712/Rhine-Music-Windows/blob/main/NOTICE.md" target="_blank" rel="noopener">版权与资源说明 ↗</a></p><a href="/?original=1&scene=archive" target="_blank" rel="noopener">打开原版档案界面 ↗</a><p><a href="/fonts/MiSans-license.pdf" target="_blank" rel="noopener">MiSans 字体许可 ↗</a></p></section>`;
@@ -1668,6 +1679,37 @@ function updateQuality() {
     summary.textContent = `渲染 ${renderQuality.scale}% · 像素上限 ${renderQuality.pixelRatio}× · ${renderQuality.antialias === "off" ? "原始抗锯齿" : "SMAA"}`;
   savePrefs();
   wakeScene();
+  updateRenderDiagnostics();
+}
+/**
+ * Renderer/back-end readout for the 设置 → 渲染模式 section. WebView only
+ * exposes the driver string through WebGL, so this turns the same diagnostics
+ * used by tests into something a user can read (and paste into a bug report).
+ */
+function updateRenderDiagnostics() {
+  const out = document.querySelector<HTMLElement>("#render-diagnostics");
+  if (!out) return;
+  const host = document.querySelector<HTMLElement>("#three-scene");
+  let capability: { api?: string; renderer?: string; mode?: string } | null = null;
+  try {
+    capability = JSON.parse(host?.dataset.gpuCapability ?? "null");
+  } catch {
+    capability = null;
+  }
+  const canvas = document.querySelector<HTMLCanvasElement>(".three-scene canvas");
+  const ratio = scene?.renderRatio ?? 1;
+  const lines = [
+    `后端   ${capability?.api ?? "WebGL"} · ${capability?.mode === "software" ? "软件渲染" : "显卡加速"}`,
+    `渲染器 ${capability?.renderer ?? "未知"}`,
+    canvas
+      ? `画布   ${canvas.width}×${canvas.height} · 内部比例 ${ratio.toFixed(2)}×`
+      : "画布   —",
+    `预设   ${presetLabels[preferences.quality] ?? preferences.quality} · 动态分辨率 ${
+      preferences.dynamicResolution ? "开" : "关"
+    } · 空闲停帧 ${preferences.idleFrames ? "开" : "关"}`,
+    document.querySelector("#runtime-info")?.textContent?.trim() ?? "",
+  ].filter(Boolean);
+  out.textContent = lines.join("\n");
 }
 async function editGenres() {
   const body = document.querySelector("#panel-body");
@@ -1907,6 +1949,10 @@ document.addEventListener("click", (e) => {
     case "sound-preview":
       effects.play("page-open");
       break;
+    case "refresh-diagnostics":
+      updateRenderDiagnostics();
+      notify("已刷新渲染信息");
+      break;
     case "fullscreen":
       void (
         document.fullscreenElement
@@ -2046,6 +2092,20 @@ document.addEventListener("change", (e) => {
         el.dataset.quality === "antialias" ? el.value : Number(el.value),
     });
     updateQuality();
+  }
+  if (el.id === "dynamic-resolution-setting") {
+    preferences.dynamicResolution = el.checked;
+    scene?.setDynamicResolution(el.checked);
+    savePrefs();
+    wakeScene();
+    updateRenderDiagnostics();
+  }
+  if (el.id === "idle-frames-setting") {
+    preferences.idleFrames = el.checked;
+    scene?.setIdleFrames(el.checked);
+    savePrefs();
+    wakeScene();
+    updateRenderDiagnostics();
   }
   if (el.id === "sound-setting") {
     preferences.sound = el.checked;
@@ -2334,7 +2394,11 @@ async function start() {
     scene.setTheme(preferences.theme);
     scene.setQuality(renderQuality);
     scene.setReduced(preferences.reduced);
-    if (isMobileShell()) scene.enableMobileRendering();
+    if (isMobileShell()) {
+      scene.enableMobileRendering();
+      scene.setDynamicResolution(preferences.dynamicResolution);
+      scene.setIdleFrames(preferences.idleFrames);
+    }
     bindSceneNavigation(scene);
     $("#music-loading").remove();
     updateSelection();

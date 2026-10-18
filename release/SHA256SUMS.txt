@@ -1,2 +1,2 @@
-SHA256 (Rhine-Music-Mobile-1.1.0.apk) = 9e495eb6539eb8275070071326d51e41bfbaea02807350c2e7aded6fba612ee8
+SHA256 (Rhine-Music-Mobile-1.1.0.apk) = 41b28200cfb33d58e6b500b2de8c656b38f466befa4eb3c4aa9c537e8f30530b
 

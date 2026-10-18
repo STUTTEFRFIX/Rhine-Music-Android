@@ -12,6 +12,22 @@ export type RenderQuality = {
 };
 
 export const qualityPresets = {
+  /**
+   * Battery-first mode for old/entry phones: 1× CSS, no shadows or post
+   * processing. Motion and layout stay identical so the app still reads as the
+   * same product, just cheaper.
+   */
+  saver: {
+    scale: 85,
+    pixelRatio: 1,
+    antialias: "off",
+    shadows: 0,
+    aoSamples: 0,
+    aoResolution: 0.5,
+    depthOfField: 0,
+    transmission: 0.25,
+    anisotropy: 2,
+  },
   performance: {
     scale: 80,
     pixelRatio: 1,
@@ -111,6 +127,7 @@ export function transmissionResolutionScale(
 }
 
 export const presetLabels: Record<QualityPreset, string> = {
+  saver: "省电",
   performance: "性能",
   mobile: "手机",
   original: "原始",

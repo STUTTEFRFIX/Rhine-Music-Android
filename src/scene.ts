@@ -788,6 +788,21 @@ export class ArchiveScene {
     }
     this.container.dataset.renderRatio = String(this.dynamicScale);
   }
+  /**
+   * Stop scheduling rAF once the archive is at rest (phone power saving).
+   * Disabling it keeps a steady low-frequency loop for comparison/testing.
+   */
+  setIdleFrames(enabled: boolean) {
+    this.idleFramesEnabled = enabled;
+    this.frameDurations.length = 0;
+    this.lastFrameAt = 0;
+    if (!enabled) {
+      this.stillSince = 0;
+      this.renderIdle = false;
+      this.container.dataset.renderIdle = "false";
+      this.wake();
+    }
+  }
   get renderRatio() {
     return this.dynamicScale;
   }

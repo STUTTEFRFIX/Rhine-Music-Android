@@ -2165,3 +2165,20 @@
     background: color-mix(in srgb, var(--panel) 95%, transparent) !important;
   }
 }
+
+/* 设置 → 渲染模式：WebGL 后端 / 渲染器 / 画布 / 开关 的只读诊断块。 */
+@media (max-width: 700px) {
+  #stage .render-diagnostics {
+    margin: 10px 0 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--mobile-rule);
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    color: var(--ink);
+    font-family: var(--mobile-mono);
+    font-size: 10.5px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+}

@@ -42,6 +42,11 @@
 - **实测**：模拟器（RTX 2070 GLES 转译）交互 **60.1 FPS @ 618×1227**；桌面 1600×900 不受影响。
 - **封面管线**：手机端使用 128px 图集 tile + `/api/artwork?w=512` 缩略图；CPU 回读回退只保留给
   旧版 WebView（Chromium < 115），新设备恢复 GPU 上传路径。
+- **更多渲染模式**：画质预设扩展为 省电 / 性能 / 手机 / 原始 / 高 / 极高 六档，保留自定义精细设置
+  （渲染比例、像素上限、抗锯齿、各向异性、折射、阴影、AO、景深）；新增 **动态分辨率**、**空闲停帧** 两个运行时开关，
+  以及「渲染信息」诊断块（WebGL 后端 / 驱动字符串 / 画布 / 内部比例 / 当前预设）。
+- 模拟器可用 `tools/device/emulator-gpu.ps1 -Mode host|swiftshader|angle|guest` 切换 GPU 后端做对比；
+  MobileGL（MG/MGL）是 FCL 插件的桌面 GL 实现，不能替换 WebView 渲染器，详见 [`docs/RENDER-MODES.md`](RENDER-MODES.md)。
 - 具体数据见 [`docs/PERF.md`](PERF.md)。
 
 ## 兼容性与升级
@@ -57,4 +62,5 @@
 - 模拟器（无 su）只能验证 SAF/ADB 导入路径；Root 路径需在已 Root 真机上验证。
 - 模拟器无外网 DNS 时 B 站在线解析会失败（返回明确错误并建议改用缓存导入）；音频直链下载不受影响。
 - 验收截图用 `adb exec-out screencap` 采集（DevTools 截图不含 WebView 硬件合成的 3D 层）。
+
 

@@ -44,8 +44,9 @@ WebView 外壳加载同一套 Web 前端，本地 Java 音乐服务提供与原 
   4. **B 站缓存导入**：读取手机哔哩哔哩客户端缓存（`entry.json` + `audio.m4s`），自动把 AAC 音轨转换为可播放的 `.m4a`。
      三种导入方式：应用内 Root、ADB 导出后选择目录、手动选择已导出文件夹。详见 [docs/BILI-CACHE.md](docs/BILI-CACHE.md)。
 - **歌单**：新建、改名、加曲、排序、移除、删除，持久化在应用私有目录。
-- **画质与烘焙**：手机默认「手机」画质预设（全设备像素、2048 阴影、柔和景深），仅软件渲染降级到「性能」；
-  静态阴影/环境光只烘焙一次，空闲时降低刷新，帧率不足时自动降低内部渲染比例。详见 [docs/PERF.md](docs/PERF.md)。
+- **画质与烘焙**：手机默认「手机」画质预设（1.5× CSS、2048 烘焙阴影、柔和景深），仅软件渲染降级到「性能」；
+  设置 →「渲染模式」另提供 **省电 / 性能 / 手机 / 原始 / 高 / 极高** 六档 + 自定义精细设置、
+  动态分辨率与空闲停帧开关，以及 WebGL 后端诊断信息。详见 [docs/RENDER-MODES.md](docs/RENDER-MODES.md)、[docs/PERF.md](docs/PERF.md)。
 
 ## 安装
 
@@ -155,5 +156,6 @@ public/、scripts/、content/、sdk/  上游 Windows 版源码与资源（不删
 - 上游：[RonaldDeng/Rhine-Music-Demo](https://github.com/RonaldDeng/Rhine-Music-Demo)（音乐适配）、[LBEILC/RhineLabUI](https://github.com/LBEILC/RhineLabUI)（三维档案界面基础）、[Bong712/Rhine-Music-Windows](https://github.com/Bong712/Rhine-Music-Windows)（Windows 移植与同步歌词）。
 
 **非代码资源（`.glb` 模型、界面图标、演示封面、MiSans 字体等）不因代码采用 MIT 而自动获得授权。** 详见上述声明文件。
+
 
 
