@@ -1,0 +1,9 @@
+Rhine Music Mobile 1.0.0
+========================
+File:   Rhine-Music-Mobile-1.0.0.apk
+Size:   36294725 bytes
+SHA256: C438F3490E4E5AE88200BB997CF3D8E340A926D39866D30C15FB14317651AED7
+Package: com.rhine.music (versionCode 1, versionName 1.0.0)
+Min SDK: 24 (Android 7.0)   Target SDK: 34
+Signing: local self-signed (sideload only)
+Build:  see docs/BUILD.md (aapt2 + javac + d8 + zipalign + apksigner)

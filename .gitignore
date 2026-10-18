@@ -1,0 +1,24 @@
+node_modules/
+dist/
+/outputs/
+artifacts/
+payload/
+payload.zip
+source-package/
+smoke-home/
+smoke-home-final/
+work/
+music-data-v3/
+.env
+.env.*
+!.env.example
+*.log
+sdk/*.nupkg
+
+# --- Android port -----------------------------------------------------------
+android/**/build/
+*.keystore
+*.idsig
+device-shots/
+hs_err_pid*.log
+replay_pid*.log
