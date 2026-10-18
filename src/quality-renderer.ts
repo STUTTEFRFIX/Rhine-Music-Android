@@ -42,6 +42,7 @@ export function resizeQuality(
   composer: EffectComposer,
   host: HTMLElement,
   quality: RenderQuality,
+  dynamicScale = 1,
 ) {
   const width = Math.max(1, host.clientWidth),
     height = Math.max(1, host.clientHeight);
@@ -52,6 +53,7 @@ export function resizeQuality(
     host.getBoundingClientRect().width / width,
     devicePixelRatio,
     renderer.capabilities.maxTextureSize,
+    dynamicScale,
   );
   renderer.setPixelRatio(dimensions.ratio);
   renderer.setSize(width, height);

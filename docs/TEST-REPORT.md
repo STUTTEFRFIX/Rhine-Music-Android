@@ -130,3 +130,57 @@ adb forward tcp:9222 localabstract:webview_devtools_remote_$pid
 node tools\device\smoke-test.mjs
 ```
 
+## 8. V2（1.1.0）验收记录
+
+环境与第 1 节相同（模拟器 1080×2400 @420dpi → CSS 412×843，DPR 2.625，WebView Chrome/113），
+APK 为 `release/Rhine-Music-Mobile-1.1.0.apk`。以下均为**实际执行过**的检查，截图在
+[`screenshots/`](../screenshots/)（设备帧缓冲 `adb exec-out screencap`，含 WebGL 层）。
+
+### 8.1 手机首次启动 / 画质
+
+| 检查 | 结果 |
+| --- | --- |
+| 首次启动（清空数据后） | `quality="mobile"`、`reduced=false`，画布 `618×1227`（1.5× CSS，ratio 1） |
+| 旧版偏好迁移 | 已保存 `quality="performance"` 的 V1 用户启动后自动升级为 `mobile`，写入 `mobileShellVersion=2`，不会反复覆盖 |
+| 软件渲染回退 | `gpuCapability.mode="software"` 时仍为 `performance` + `reduced=true` |
+| 桌面回归 | 1600×900 仍为 `original` 预设、`renderIdle=false`，未停帧 |
+
+### 8.2 性能与空闲
+
+| 指标 | 结果 |
+| --- | --- |
+| 交互 FPS（连续拖动 4.3s，`renderFrames` 增量） | **60.1 FPS** @ 618×1227（`rAF诊断 60 FPS`） |
+| 静态停帧 | 静置 2.5s 后 `stage.dataset.renderIdle="true"`，帧循环停止；每 2s 补 1 帧避免部分 WebView 丢失最后一帧 |
+| 唤醒 | 真实触摸（`Input.dispatchTouchEvent`）立刻 `renderIdle=false`，帧计数继续增长 |
+| 动态分辨率 | 帧率不足时在 0.5–1.0 内自动下调，只降不升过用户预设；底层仍保留 1024 阴影 |
+| 封面缩略图 | `/api/artwork/...&w=512` 返回 17 KB JPEG（原图 651 KB），3D 封面清晰 |
+
+### 8.3 网络下载与 B 站缓存
+
+| 用例 | 结果 |
+| --- | --- |
+| 直链解析 | `resolveLink('http://127.0.0.1:8766/audio/motif.ogg')` → `rhine:resolve {type:"done", kind:"audio"}` |
+| 直链下载 | `downloadResolved` 进度 8192/674580 → 674580/674580，`done`；自动入库「下载音乐」专辑（3 首），Range `206` |
+| B 站链接解析 | 模拟器无外网 DNS（`api.bilibili.com` 无法解析），返回可读错误并提示改用缓存导入；宿主侧已确认 B 站 `view` + `playurl(fnval=16)` 可用 |
+| B 站缓存导入（无 Root 路径） | 把真实缓存样本放入应用 `files/bili-inbox` 后启动自动扫描 → 生成 `.m4a` + 元数据，曲库出现「【官方 MV】Never Gonna Give You Up - Rick Astley / 索尼音乐中国」，时长 3:32、封面正常 |
+| B 站缓存条目显示 | 面板显示 `ROOT 不可用 / SU 未授权 / CACHE ENTRIES 1 条`，并给出 ADB 导出命令与手动选目录入口 |
+| 桥接方法 | `biliStatus` / `requestRoot` / `importBilibiliCache` / `pickBiliFolder` / `resolveLink` / `downloadResolved` 均存在 |
+
+### 8.4 界面
+
+| 检查 | 结果 |
+| --- | --- |
+| 竖屏首屏 | 3D 玻璃书架占上半屏，下半屏为玻璃信息层；长标题（B 站标题）两行完整显示，不再被艺术家行裁切 |
+| 顶部导航 | 音乐库 / 搜索 / 歌单 / **网络下载** / 设置 五个入口，触控目标 ≥ 44 px |
+| 网络下载面板 | URL 输入 + 解析、结果卡（封面/标题/作者/时长/Referer 标记）、开始下载、历史记录、B 站缓存区块 |
+| 正在播放 | 播放终端式版式：玻璃封面框、进度条、播放控制、同步歌词/队列/歌单/定位专辑四个入口 |
+| 三种主题 | 暖昼 / 薄暮 / 深夜均正常，夜间封面卡与玻璃边缘可读 |
+
+### 8.5 遗留限制
+
+1. **模拟器外网**：B 站在线解析需要在能解析 `api.bilibili.com` 的真机/网络环境验证；离线时功能会给出明确提示。
+2. **Root 探测**：模拟器 `adb root` 可用但 App 无法执行 `su`，因此 Root 导入在本机只验证了“检测到不可用并降级到手动导入”，未验证真实 Root 设备。
+3. **截图方式**：WebView 的硬件合成层不会被 CDP `Page.captureScreenshot` 捕获（3D 区域为空白），仓库截图均用 `adb exec-out screencap`。
+4. **模拟器性能波动**：宿主为 GLES 转译，帧率随宿主负载波动；60 FPS 为清空后台后的实测值，低端真机可能触发动态分辨率下调。
+
+

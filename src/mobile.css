@@ -1,18 +1,28 @@
 /* ==========================================================================
    Rhine Music · phone shell (≤700 px only)
 
-   Everything new lives inside the media query below so the desktop layout
-   (≥701 px, 1600×900 reference) keeps music.css untouched. Selectors carry an
-   explicit `#stage` prefix so they can override the existing
-   `[data-layout="portrait"]` rules (which are one class more specific than a
-   plain class selector) without editing those files.
+   The phone is not a generic music app: the top half keeps the 3D glass
+   archive visible, the bottom half is a translucent archive plate with hairline
+   rules, monospace micro-labels and MiSans Demibold headings. Everything new
+   lives inside the media query so the desktop layout (≥701 px, 1600×900) keeps
+   music.css untouched. Selectors carry an explicit `#stage` prefix so they can
+   override the existing `[data-layout="portrait"]` rules without editing those
+   files.
    ========================================================================== */
 
-/* New phone-only nodes are inert above 700 px. */
+/* New phone-only nodes are inert above 700 px. The id prefix is required:
+   the desktop header's `.music-topnav > button` rule is more specific. */
 .mobile-mini,
 .mobile-now,
 .mobile-native-block,
-.mobile-play-all-row {
+.mobile-play-all-row,
+.mobile-net-entry,
+.mobile-sheet {
+  display: none;
+}
+
+#stage .mobile-net-entry,
+#stage .mobile-sheet {
   display: none;
 }
 
@@ -22,14 +32,64 @@
   display: none !important;
 }
 
+@keyframes mobile-slab-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mobile-cover-in {
+  from {
+    opacity: 0;
+    transform: scale(1.035);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mobile-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 700px) {
   #stage.music-app {
-    --mobile-mini-h: 64px;
+    --mobile-mini-h: 62px;
     --mobile-safe-top: env(safe-area-inset-top, 0px);
     --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
     --mobile-mini-total: calc(var(--mobile-mini-h) + var(--mobile-safe-bottom));
-    --mobile-edge: 16px;
+    --mobile-nav-h: 84px;
+    --mobile-edge: 18px;
     --mobile-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --mobile-mono: "SFMono-Regular", "Cascadia Mono", "JetBrains Mono",
+      "Roboto Mono", Consolas, monospace;
+    --mobile-rule: color-mix(in srgb, var(--ink) 16%, transparent);
+    --mobile-rule-strong: color-mix(in srgb, var(--ink) 30%, transparent);
+    --mobile-glass: color-mix(in srgb, var(--panel) 76%, transparent);
+    --mobile-glass-soft: color-mix(in srgb, var(--panel) 56%, transparent);
+    --mobile-shadow: 0 -18px 46px color-mix(in srgb, var(--ink) 10%, transparent);
+    --mobile-accent-text: color-mix(in srgb, var(--accent) 74%, var(--ink));
+  }
+
+  #stage.music-app[data-theme="dusk"] {
+    --mobile-accent-text: color-mix(in srgb, var(--accent) 62%, var(--ink));
+  }
+
+  #stage.music-app[data-theme="night"] {
+    --mobile-accent-text: var(--accent);
   }
 
   /* ------------------------------------------------------------------ */
@@ -44,7 +104,7 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     z-index: 8;
   }
 
@@ -54,26 +114,31 @@
   }
 
   #stage .music-brand {
-    gap: 3px;
+    gap: 2px;
     min-width: 0;
     min-height: 44px;
     justify-content: center;
+    color: var(--ink);
   }
 
   #stage .music-brand strong {
     font-size: 18px;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.6px;
     line-height: 1.1;
+    font-weight: 700;
+    color: var(--ink);
   }
 
   #stage .music-brand span {
-    font-size: 7px;
-    letter-spacing: 1.1px;
+    font-family: var(--mobile-mono);
+    font-size: 6.8px;
+    letter-spacing: 1.15px;
     line-height: 1.4;
     max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: var(--muted);
   }
 
   #stage .music-brand i {
@@ -83,31 +148,33 @@
   #stage .music-topnav {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 0;
     padding-top: 0;
     width: auto;
     flex: 0 0 auto;
   }
 
   #stage .music-topnav > button {
-    width: 44px;
+    width: 42px;
     height: 44px;
     display: grid;
     place-items: center;
     gap: 0;
     font-size: 0;
-    border-radius: 14px;
+    border-radius: 0;
     color: var(--ink);
+    background: transparent;
   }
 
   #stage .music-topnav > button svg {
-    width: 21px;
-    height: 21px;
+    width: 20px;
+    height: 20px;
   }
 
   #stage .music-topnav > button:active,
   #stage .music-topnav > button[aria-pressed="true"] {
-    background: var(--veil);
+    color: var(--accent);
+    background: transparent;
   }
 
   /* Labels, keyboard hints, badges and the theme pill move into the settings
@@ -125,65 +192,202 @@
   #stage .library-status {
     left: var(--mobile-edge);
     right: var(--mobile-edge);
-    top: calc(var(--mobile-safe-top) + 56px);
-    font-size: 10px;
-    letter-spacing: 0.2px;
+    top: calc(var(--mobile-safe-top) + 54px);
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 0.5px;
     max-width: none;
   }
 
   /* ------------------------------------------------------------------ */
-  /* 2. Album browse: card above, one-hand navigation below              */
+  /* 2. The 3D shelf is the first screen; text lives on a glass plate     */
   /* ------------------------------------------------------------------ */
 
-  #stage .album-callout h1 {
-    font-size: 26px;
-    line-height: 1.18;
-    margin-bottom: 8px;
-    max-width: 100%;
-    letter-spacing: -0.4px;
+  /* Keep the scene visible: the old portrait veil painted a nearly opaque
+     page-bg wash over the top half. This one only feathers the plate edge. */
+  #stage .music-browse-veil,
+  #stage.music-app[data-layout="portrait"] .music-browse-veil {
+    background:
+      radial-gradient(
+        110% 52% at 50% 2%,
+        color-mix(in srgb, var(--page-bg) 22%, transparent) 0%,
+        transparent 58%
+      ),
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        transparent 42%,
+        color-mix(in srgb, var(--page-bg) 12%, transparent) 50%,
+        color-mix(in srgb, var(--page-bg) 30%, transparent) 62%,
+        transparent 76%
+      );
   }
 
-  /* The desktop callout paints a side veil; on a phone the text sits on a
-     frosted card so it stays readable above a bright album cover. */
-  #stage .album-callout {
+  #stage .music-vignette {
+    opacity: 0.62;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--page-bg) 34%, transparent),
+      transparent 16%,
+      transparent 82%,
+      color-mix(in srgb, var(--page-bg) 24%, transparent)
+    );
+  }
+
+  /* The information plate: no large white card, no heavy radius. */
+  #stage .album-callout,
+  #stage.music-app[data-layout="portrait"] .album-callout {
+    position: absolute;
+    top: 52%;
+    bottom: calc(var(--mobile-mini-total) + var(--mobile-nav-h));
+    left: 0;
+    right: 0;
+    width: auto;
     height: auto;
-    max-height: 62vh;
-    margin-left: 0;
-    padding: 14px 16px 16px;
-    border-radius: 22px;
-    border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-    background: color-mix(in srgb, var(--panel) 80%, transparent);
-    backdrop-filter: blur(16px) saturate(1.1);
-    -webkit-backdrop-filter: blur(16px) saturate(1.1);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.09);
+    min-height: 0;
+    max-height: none;
+    margin: 0;
+    padding: 15px var(--mobile-edge) 8px;
+    border: 0;
+    border-top: 1px solid var(--mobile-rule-strong);
+    border-radius: 0;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--panel) 78%, transparent) 0%,
+        color-mix(in srgb, var(--panel) 68%, transparent) 100%
+      );
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    box-shadow:
+      var(--mobile-shadow),
+      inset 0 1px 0 color-mix(in srgb, #ffffff 28%, transparent);
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
+    text-shadow: none;
+    z-index: 3;
   }
 
   #stage .album-callout::-webkit-scrollbar {
     display: none;
   }
 
+  #stage .album-callout::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+  }
+
+  /* A fine archive scale above the entry link; it is decorative only. */
+  #stage .album-callout::after {
+    content: "";
+    position: absolute;
+    left: var(--mobile-edge);
+    right: var(--mobile-edge);
+    bottom: 51px;
+    height: 6px;
+    pointer-events: none;
+    opacity: 0.55;
+    background-image: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ink) 42%, transparent) 0 1px,
+      transparent 1px 7px
+    );
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  }
+
+  #stage .album-callout > * {
+    position: relative;
+    flex-shrink: 0;
+  }
+
   #stage .music-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 3px;
+    font-family: var(--mobile-mono);
     font-size: 8px;
-    letter-spacing: 1.2px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  #stage .music-eyebrow::before {
+    content: "";
+    width: 13px;
+    height: 1px;
+    flex: 0 0 auto;
+    background: var(--accent);
+  }
+
+  #stage .music-eyebrow > span {
+    margin: 0 2px;
   }
 
   #stage .selection-rule {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 7px;
+    padding: 7px 0 6px;
+    border-bottom: 1px solid var(--mobile-rule-strong);
+    font-family: var(--mobile-mono);
     font-size: 8.5px;
-    padding: 7px 0;
-    margin-bottom: 10px;
+    letter-spacing: 1.1px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .selection-rule > span:last-child {
+    font-size: 8px;
+    color: var(--muted);
+    letter-spacing: 0.8px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #stage .selection-rule .music-rolling-number {
+    display: inline-flex;
+    vertical-align: baseline;
+  }
+
+  #stage .album-callout h1 {
+    font-size: var(--album-title-size, 25px);
+    line-height: 1.34;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin: 0 0 4px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   #stage .selection-artist {
+    margin: 0 0 6px;
     font-size: 13px;
-    margin: 0 0 12px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.1px;
   }
 
   #stage .selection-meta {
-    font-size: 10px;
-    line-height: 1.6;
+    font-family: var(--mobile-mono);
+    font-size: 9.5px;
+    font-weight: 400;
+    line-height: 1.65;
+    letter-spacing: 0.3px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
 
   #stage .album-callout .open-album,
@@ -192,139 +396,251 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    min-height: 48px;
-    margin-top: 14px;
-    padding: 0 16px;
-    border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--ink) 7%, transparent);
-    font-size: 14px;
-    letter-spacing: 0.4px;
+    min-height: 46px;
+    margin-top: auto;
+    padding: 12px 0 10px;
+    border: 0;
+    border-bottom: 1px solid var(--mobile-rule);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.6px;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   #stage .open-album > span {
-    font-size: 15px;
-    opacity: 0.7;
-  }
-
-  /* The browse surface focuses this button on entry; keep the ring quiet so it
-     does not read as a selected card on a touch screen. */
-  #stage .album-callout .open-album:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-    outline-offset: 3px;
+    font-size: 17px;
+    line-height: 1;
+    opacity: 0.72;
+    transition: transform 240ms var(--mobile-ease), color 240ms var(--mobile-ease);
   }
 
   #stage .open-album:active {
-    background: color-mix(in srgb, var(--ink) 14%, transparent);
+    color: var(--accent);
+    background: transparent;
   }
 
+  #stage .open-album:active > span {
+    transform: translateX(3px);
+    color: var(--accent);
+  }
+
+  #stage .album-callout .open-album:focus-visible {
+    outline: none;
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* A quiet switch cue for the information plate; the 3D card itself is
+     animated by the scene. */
+  #stage .album-callout.is-switching .selection-rule,
+  #stage .album-callout.is-switching h1,
+  #stage .album-callout.is-switching .selection-artist,
+  #stage .album-callout.is-switching .selection-meta {
+    animation: mobile-slab-in 300ms var(--mobile-ease) both;
+  }
+
+  #stage .album-callout.is-switching .selection-artist {
+    animation-delay: 18ms;
+  }
+
+  #stage .album-callout.is-switching .selection-meta {
+    animation-delay: 34ms;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3. Archive rail: counter, fine arrows, a real ruler                   */
+  /* ------------------------------------------------------------------ */
+
   #stage .music-navigation {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--mobile-mini-total);
+    width: auto;
+    height: var(--mobile-nav-h);
+    box-sizing: border-box;
     display: flex;
     flex-wrap: wrap;
+    align-content: center;
     align-items: center;
     column-gap: 8px;
-    row-gap: 2px;
-    left: var(--mobile-edge);
-    right: var(--mobile-edge);
-    bottom: calc(var(--mobile-mini-total) + 8px);
+    row-gap: 0;
+    padding: 7px var(--mobile-edge) 6px;
     z-index: 5;
+    border-top: 1px solid var(--mobile-rule);
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    backdrop-filter: blur(18px) saturate(1.08);
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 18%, transparent);
   }
 
   #stage .music-counter {
     order: 1;
     flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 76px;
   }
 
   #stage .music-counter .music-eyebrow {
+    display: block;
+    margin: 0;
+    font-size: 6.5px;
+    letter-spacing: 1.35px;
+    color: var(--muted);
+  }
+
+  #stage .music-counter .music-eyebrow::before {
     display: none;
   }
 
   #stage .music-counter > div {
-    margin-top: 0;
-    gap: 2px;
+    display: flex;
     align-items: baseline;
+    gap: 3px;
+    margin-top: 0;
   }
 
   #stage .music-counter b {
-    font-size: 19px;
-    letter-spacing: -0.4px;
-    font-weight: 400;
+    font-size: 25px;
+    line-height: 1;
+    font-weight: 300;
+    letter-spacing: -1.4px;
+    font-variant-numeric: tabular-nums;
   }
 
   #stage .music-counter > div > span {
-    font-size: 10px;
-  }
-
-  #stage .music-counter i {
-    margin-left: 3px;
+    font-family: var(--mobile-mono);
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--muted);
     letter-spacing: 0;
   }
 
-  /* A 2 px ruler tick is not a thumb target. The counter and the stepper
-     buttons carry the same information on a phone. */
-  #stage #album-ticks,
-  #stage #album-ticks.music-ruler,
-  #stage #album-ticks.music-ticks {
-    display: none !important;
-  }
-
-  #stage .album-stepper,
-  #stage .genre-stepper {
-    gap: 4px;
+  #stage .music-counter i {
+    margin-left: 2px;
+    letter-spacing: 0;
+    font-style: normal;
   }
 
   #stage .album-stepper {
     order: 2;
     flex: 1 1 auto;
+    display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  #stage .album-stepper > button,
+  #stage .genre-stepper > button {
+    width: 32px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: color-mix(in srgb, var(--ink) 78%, transparent);
+    font-size: 17px;
+    font-weight: 300;
+    line-height: 1;
+  }
+
+  #stage .album-stepper > button:active,
+  #stage .genre-stepper > button:active {
+    color: var(--accent);
+    background: transparent;
+  }
+
+  /* The desktop ticks are hidden on touch screens; the compact ruler is not:
+     it is the archive scale the phone version was missing. */
+  #stage #album-ticks,
+  #stage #album-ticks.music-ruler {
+    display: block;
+    flex: 0 0 auto;
+    height: 20px;
+    max-width: 112px;
+    overflow: hidden;
+    opacity: 0.92;
+  }
+
+  #stage #album-ticks.music-ruler {
+    --tick-height: 20px;
+    --tick-rest: 7px;
+    --tick-hover: 15px;
+    --tick-width: 2px;
+    --tick-gap: 5px;
   }
 
   #stage .genre-stepper {
     order: 3;
     flex: 1 1 100%;
-    justify-content: space-between;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 5px;
+    padding-top: 3px;
+    border-top: 1px solid var(--mobile-rule);
   }
 
-  #stage .album-stepper > button,
   #stage .genre-stepper > button {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    font-size: 19px;
-    line-height: 1;
-    border-radius: 14px;
-    color: var(--ink);
-  }
-
-  #stage .album-stepper > button:active,
-  #stage .genre-stepper > button:active {
-    background: var(--veil);
-    color: var(--accent);
+    width: 32px;
+    height: 28px;
+    font-size: 15px;
   }
 
   #stage .genre-stepper > div {
     flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px;
     text-align: center;
   }
 
   #stage .genre-stepper small {
-    display: none;
-  }
-
-  #stage .genre-stepper div button {
-    width: 100%;
-    min-height: 44px;
-    font-size: 13px;
-    letter-spacing: 0.4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: block;
+    flex: 0 0 auto;
+    margin: 0;
+    font-family: var(--mobile-mono);
+    font-size: 7px;
+    letter-spacing: 0.9px;
+    color: var(--muted);
     white-space: nowrap;
   }
 
+  #stage .genre-stepper div button {
+    width: auto;
+    min-width: 0;
+    min-height: 28px;
+    flex: 0 1 auto;
+    padding: 0;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    text-align: center;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+  }
+
+  #stage .genre-stepper div button:active {
+    color: var(--accent);
+  }
+
   /* ------------------------------------------------------------------ */
-  /* 3. Bottom mini player                                               */
+  /* 4. Bottom mini player                                               */
   /* ------------------------------------------------------------------ */
 
   #stage .mobile-mini {
@@ -339,11 +655,11 @@
     height: var(--mobile-mini-total);
     box-sizing: border-box;
     padding: 0 8px var(--mobile-safe-bottom);
-    background: color-mix(in srgb, var(--panel) 94%, transparent);
-    backdrop-filter: blur(20px) saturate(1.15);
-    -webkit-backdrop-filter: blur(20px) saturate(1.15);
-    border-top: 1px solid var(--line);
-    box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.07);
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(20px) saturate(1.12);
+    -webkit-backdrop-filter: blur(20px) saturate(1.12);
+    border-top: 1px solid var(--mobile-rule);
+    box-shadow: 0 -12px 34px color-mix(in srgb, var(--ink) 8%, transparent);
   }
 
   #stage .mobile-mini-line {
@@ -351,7 +667,7 @@
     left: 0;
     right: 0;
     top: 0;
-    height: 2px;
+    height: 1px;
     overflow: hidden;
     background: color-mix(in srgb, var(--ink) 12%, transparent);
   }
@@ -371,7 +687,7 @@
     height: 100%;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 11px;
     padding: 0 4px;
     text-align: left;
   }
@@ -385,16 +701,17 @@
     display: grid;
     place-items: center;
     overflow: hidden;
-    background: color-mix(in srgb, var(--ink) 8%, var(--surface));
+    background: color-mix(in srgb, var(--ink) 7%, var(--surface));
     color: var(--muted);
   }
 
   #stage .mobile-mini-cover {
     flex: 0 0 auto;
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--mobile-rule);
+    border-radius: 1px;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--ink) 12%, transparent);
   }
 
   #stage .mobile-mini-cover img,
@@ -405,29 +722,36 @@
     display: block;
   }
 
+  #stage .mobile-mini-cover img {
+    animation: mobile-cover-in 280ms var(--mobile-ease) both;
+  }
+
   #stage .mobile-cover-fallback {
-    font-size: 20px;
+    font-size: 18px;
     opacity: 0.6;
   }
 
   #stage .mobile-mini-copy {
     display: grid;
-    gap: 2px;
+    gap: 3px;
     min-width: 0;
   }
 
   #stage .mobile-mini-copy strong {
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1.3;
+    letter-spacing: 0.1px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   #stage .mobile-mini-copy small {
-    font-size: 11px;
+    font-family: var(--mobile-mono);
+    font-size: 9px;
     line-height: 1.3;
+    letter-spacing: 0.3px;
     color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -442,39 +766,47 @@
   }
 
   #stage .mobile-mini-controls button {
-    width: 44px;
+    width: 42px;
     height: 44px;
     display: grid;
     place-items: center;
     border-radius: 50%;
     color: var(--ink);
+    background: transparent;
   }
 
   #stage .mobile-mini-controls button svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
   }
 
   #stage .mobile-mini-controls button:active {
-    background: var(--veil);
+    color: var(--accent);
+    background: transparent;
   }
 
   #stage .mobile-mini-controls button:disabled {
-    opacity: 0.28;
+    opacity: 0.26;
   }
 
   #stage .mobile-mini-controls .mobile-mini-play {
-    width: 48px;
-    height: 48px;
-    margin: 0 2px;
+    width: 44px;
+    height: 44px;
+    margin: 0 3px;
+    border: 1px solid color-mix(in srgb, var(--ink) 70%, transparent);
+    background: transparent;
+    color: var(--ink);
+    box-shadow: none;
+  }
+
+  #stage .mobile-mini-controls .mobile-mini-play:active {
     background: var(--ink);
     color: var(--surface);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   }
 
   #stage .mobile-mini-controls .mobile-mini-play svg {
-    width: 22px;
-    height: 22px;
+    width: 19px;
+    height: 19px;
   }
 
   /* Play/pause glyph swap, shared by both transport surfaces. */
@@ -491,7 +823,7 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* 4. Full-screen Now Playing                                          */
+  /* 5. Full-screen Now Playing: a playback terminal                     */
   /* ------------------------------------------------------------------ */
 
   #stage .mobile-now {
@@ -500,15 +832,22 @@
     z-index: 24;
     display: flex;
     flex-direction: column;
-    background:
-      radial-gradient(
-        120% 55% at 50% -8%,
-        color-mix(in srgb, var(--accent) 14%, var(--page-bg)) 0%,
-        var(--page-bg) 58%
-      );
+    background: color-mix(in srgb, var(--page-bg) 84%, transparent);
+    backdrop-filter: blur(26px) saturate(1.06);
+    -webkit-backdrop-filter: blur(26px) saturate(1.06);
     transform: translateY(100%);
-    transition: transform 320ms var(--mobile-ease);
+    transition: transform 300ms var(--mobile-ease);
     will-change: transform;
+  }
+
+  #stage .mobile-now::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.045;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
   }
 
   #stage .mobile-now.is-open {
@@ -516,11 +855,13 @@
   }
 
   #stage .mobile-now-bar {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: calc(var(--mobile-safe-top) + 4px) 10px 4px;
+    padding: calc(var(--mobile-safe-top) + 6px) 12px 8px;
+    border-bottom: 1px solid var(--mobile-rule);
   }
 
   #stage .mobile-now-bar-copy {
@@ -531,7 +872,8 @@
 
   #stage .mobile-now-bar-copy small {
     display: block;
-    font-size: 8.5px;
+    font-family: var(--mobile-mono);
+    font-size: 7.5px;
     letter-spacing: 2px;
     color: var(--muted);
   }
@@ -539,8 +881,9 @@
   #stage .mobile-now-bar-copy strong {
     display: block;
     margin-top: 3px;
-    font-size: 12.5px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -553,75 +896,141 @@
     height: 44px;
     display: grid;
     place-items: center;
+    border: 1px solid var(--mobile-rule);
     border-radius: 50%;
     color: var(--ink);
+    background: transparent;
   }
 
   #stage .mobile-now-collapse:active,
   #stage .mobile-now-bar-queue:active {
-    background: var(--veil);
+    border-color: var(--accent);
+    color: var(--accent);
+    background: transparent;
   }
 
   #stage .mobile-now-collapse svg,
   #stage .mobile-now-bar-queue svg {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
 
   #stage .mobile-now-scroll {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 10px var(--mobile-edge) calc(var(--mobile-safe-bottom) + 28px);
+    padding: 12px 20px calc(var(--mobile-safe-bottom) + 34px);
     touch-action: pan-y;
+    scrollbar-width: none;
+  }
+
+  #stage .mobile-now-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  #stage .mobile-now-kicker {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 2px;
+    font-family: var(--mobile-mono);
+    font-size: 7.5px;
+    letter-spacing: 1.4px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-now-kicker i {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--mobile-rule);
+  }
+
+  #stage .mobile-now-art {
+    margin-top: 10px;
+  }
+
+  #stage .mobile-now-art-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 7px;
+    font-family: var(--mobile-mono);
+    font-size: 7px;
+    letter-spacing: 1.2px;
+    color: var(--muted);
   }
 
   #stage .mobile-now-cover {
-    width: min(76vw, 320px);
+    width: min(74vw, 330px);
     aspect-ratio: 1;
-    margin: 6px auto 0;
-    border-radius: 22px;
+    box-sizing: border-box;
+    margin: 0 auto;
+    padding: 7px;
+    border: 1px solid var(--mobile-rule-strong);
+    border-radius: 1px;
+    background: var(--mobile-glass-soft);
     box-shadow:
-      0 26px 60px rgba(0, 0, 0, 0.2),
-      0 2px 0 rgba(255, 255, 255, 0.4) inset;
+      0 26px 54px color-mix(in srgb, var(--ink) 16%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #ffffff 32%, transparent);
+  }
+
+  #stage .mobile-now-cover img {
+    animation: mobile-cover-in 320ms var(--mobile-ease) both;
   }
 
   #stage .mobile-now-cover .mobile-cover-fallback {
-    font-size: 46px;
+    font-size: 42px;
   }
 
   #stage .mobile-now-meta {
-    margin-top: 22px;
-    text-align: center;
+    margin-top: 20px;
+    padding-top: 13px;
+    border-top: 1px solid var(--mobile-rule);
+    text-align: left;
+  }
+
+  #stage .mobile-now-meta-overline {
+    display: block;
+    font-family: var(--mobile-mono);
+    font-size: 7.5px;
+    letter-spacing: 1.8px;
+    color: var(--muted);
   }
 
   #stage .mobile-now-meta strong {
     display: block;
-    font-size: 20px;
+    margin-top: 5px;
+    font-size: 21px;
     font-weight: 600;
     line-height: 1.3;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.25px;
     overflow-wrap: anywhere;
   }
 
   #stage .mobile-now-meta span {
     display: block;
-    margin-top: 6px;
-    font-size: 13px;
+    margin-top: 5px;
+    font-size: 12.5px;
+    line-height: 1.5;
     color: var(--muted);
   }
 
   #stage .mobile-now-seek {
-    margin-top: 20px;
+    margin-top: 16px;
   }
 
   #stage .mobile-now-times {
     display: flex;
+    align-items: baseline;
     justify-content: space-between;
-    font-size: 11px;
+    font-family: var(--mobile-mono);
+    font-size: 9.5px;
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0.4px;
     color: var(--muted);
   }
 
@@ -639,19 +1048,17 @@
     position: absolute;
     left: 0;
     right: 0;
-    top: calc(50% - 2px);
-    height: 4px;
-    border-radius: 2px;
-    background: color-mix(in srgb, var(--ink) 15%, transparent);
+    top: calc(50% - 1px);
+    height: 1px;
+    background: var(--mobile-rule-strong);
   }
 
   #stage .mobile-now-track i {
     position: absolute;
     left: 0;
-    top: calc(50% - 2px);
-    height: 4px;
+    top: calc(50% - 1px);
+    height: 1px;
     width: 100%;
-    border-radius: 2px;
     background: var(--ink);
     transform: scaleX(0);
     transform-origin: left center;
@@ -661,83 +1068,94 @@
     position: absolute;
     top: 50%;
     left: 0;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
+    width: 2px;
+    height: 17px;
+    border-radius: 0;
     background: var(--ink);
     transform: translate(-50%, -50%);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
-    transition: width 160ms ease, height 160ms ease;
+    box-shadow: none;
+    transition: height 160ms ease, width 160ms ease, background 160ms ease;
   }
 
   #stage .mobile-now-track.is-seeking b {
-    width: 20px;
-    height: 20px;
+    width: 3px;
+    height: 24px;
+    background: var(--accent);
   }
 
   #stage .mobile-now-track.is-empty {
-    opacity: 0.45;
+    opacity: 0.4;
   }
 
   #stage .mobile-now-controls {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 22px;
+    gap: 26px;
     margin-top: 6px;
   }
 
   #stage .mobile-now-controls .mobile-now-skip {
-    width: 56px;
-    height: 56px;
+    width: 52px;
+    height: 52px;
     display: grid;
     place-items: center;
     border-radius: 50%;
     color: var(--ink);
+    background: transparent;
   }
 
   #stage .mobile-now-controls .mobile-now-skip svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  #stage .mobile-now-controls .mobile-now-play {
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--ink);
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--surface);
+    box-shadow: none;
+  }
+
+  #stage .mobile-now-controls .mobile-now-play svg {
     width: 26px;
     height: 26px;
   }
 
-  #stage .mobile-now-controls .mobile-now-play {
-    width: 70px;
-    height: 70px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--ink);
-    color: var(--surface);
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2);
-  }
-
-  #stage .mobile-now-controls .mobile-now-play svg {
-    width: 28px;
-    height: 28px;
-  }
-
   #stage .mobile-now-controls button:disabled {
-    opacity: 0.3;
+    opacity: 0.28;
   }
 
   #stage .mobile-now-controls button:active {
-    transform: scale(0.96);
+    border-color: var(--accent);
   }
 
   #stage .mobile-now-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 22px;
+    column-gap: 18px;
+    row-gap: 0;
+    margin-top: 20px;
+    border-top: 1px solid var(--mobile-rule);
   }
 
   #stage .mobile-now-actions button {
-    min-height: 44px;
-    padding: 0 10px;
-    border: 1px solid var(--line);
-    border-radius: 13px;
-    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 46px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--mobile-rule);
+    border-radius: 0;
+    background: transparent;
+    font-size: 12px;
     letter-spacing: 0.3px;
     color: var(--ink);
     overflow: hidden;
@@ -745,14 +1163,26 @@
     white-space: nowrap;
   }
 
+  #stage .mobile-now-actions button::after {
+    content: "↗";
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
   #stage .mobile-now-actions button:active {
-    background: var(--veil);
+    color: var(--accent);
+    background: transparent;
+  }
+
+  #stage .mobile-now-actions button:active::after {
+    color: var(--accent);
   }
 
   #stage .mobile-now-lyrics {
-    margin-top: 26px;
-    padding-top: 16px;
-    border-top: 1px solid var(--line);
+    margin-top: 22px;
+    padding-top: 12px;
+    border-top: 1px solid var(--mobile-rule);
   }
 
   #stage .mobile-now-lyrics-head {
@@ -763,75 +1193,81 @@
   }
 
   #stage .mobile-now-lyrics-head small {
-    font-size: 8.5px;
-    letter-spacing: 2px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 1.8px;
     color: var(--muted);
   }
 
   #stage .mobile-now-lyrics-head span {
-    font-size: 10.5px;
+    font-size: 10px;
     color: var(--muted);
     text-align: right;
   }
 
   #stage .mobile-now-lyric-lines {
-    margin-top: 8px;
+    margin-top: 6px;
     display: grid;
-    gap: 1px;
   }
 
   #stage .mobile-now-lyric {
     min-height: 44px;
-    padding: 9px 12px;
-    border-radius: 11px;
+    padding: 9px 0 9px 14px;
+    border-left: 1px solid transparent;
+    border-radius: 0;
     text-align: left;
-    font-size: 15px;
-    line-height: 1.55;
+    font-size: 14.5px;
+    line-height: 1.6;
     color: var(--muted);
-    transition: color 200ms ease, background 200ms ease;
+    transition: color 220ms var(--mobile-ease), border-color 220ms var(--mobile-ease);
   }
 
   #stage .mobile-now-lyric.active {
     color: var(--ink);
     font-weight: 600;
-    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    border-left-color: var(--accent);
+    background: transparent;
   }
 
   #stage .mobile-now-lyric-empty {
     margin: 4px 0 0;
-    padding: 12px;
-    font-size: 12.5px;
+    padding: 12px 0;
+    border-left: 1px solid var(--mobile-rule);
+    padding-left: 14px;
+    font-size: 12px;
     line-height: 1.8;
     color: var(--muted);
   }
 
   /* ------------------------------------------------------------------ */
-  /* 5. Album detail: one column, big play-all, 52 px track rows          */
+  /* 6. Album detail: the card stays above, the glass panel scrolls       */
   /* ------------------------------------------------------------------ */
 
   #stage.music-app[data-mode="detail"] .music-identity {
     display: none;
   }
 
-  /* With the brand hidden the icon row must stay right-aligned. */
   #stage.music-app[data-mode="detail"] .music-header {
     justify-content: flex-end;
   }
 
   #stage .music-back {
     left: var(--mobile-edge);
-    top: calc(var(--mobile-safe-top) + 8px);
-    min-height: 48px;
-    padding: 0 18px 0 14px;
-    gap: 8px;
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    background: color-mix(in srgb, var(--panel) 90%, transparent);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    font-size: 13px;
-    letter-spacing: 0.3px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+    top: calc(var(--mobile-safe-top) + 10px);
+    min-height: 44px;
+    padding: 0 0 5px;
+    gap: 7px;
+    border: 0;
+    border-bottom: 1px solid var(--mobile-rule-strong);
+    border-radius: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    color: var(--ink);
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    z-index: 9;
   }
 
   #stage .music-back kbd {
@@ -843,16 +1279,11 @@
   }
 
   #stage.music-app[data-layout="portrait"] .music-detail::before {
-    inset: calc(40vh - 30px) 0 0;
+    content: none;
   }
 
   #stage.music-app[data-mode="detail"] .music-detail {
-    background: linear-gradient(
-      180deg,
-      transparent 0%,
-      color-mix(in srgb, var(--page-bg) 92%, transparent) 34%,
-      var(--page-bg) 46%
-    );
+    background: none;
   }
 
   #stage #album-detail-content,
@@ -860,21 +1291,47 @@
     position: absolute;
     left: 0;
     right: 0;
-    top: 42vh;
-    bottom: calc(var(--mobile-mini-total) + 6px);
-    padding: 4px var(--mobile-edge) 30px;
+    top: 44%;
+    bottom: calc(var(--mobile-mini-total) + 4px);
+    box-sizing: border-box;
+    padding: 14px var(--mobile-edge) 30px;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    /* Tracks come before the technical table on a phone: open the album and
-       the songs are already on screen. */
+    scrollbar-width: none;
+    border-top: 1px solid var(--mobile-rule-strong);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--panel) 82%, transparent) 0%,
+        color-mix(in srgb, var(--panel) 74%, transparent) 100%
+      );
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    box-shadow: var(--mobile-shadow);
     display: flex;
     flex-direction: column;
   }
 
+  #stage #album-detail-content::-webkit-scrollbar {
+    display: none;
+  }
+
   #stage #album-detail-content > * {
     flex: 0 0 auto;
+    animation: mobile-panel-in 260ms var(--mobile-ease) both;
+  }
+
+  #stage #album-detail-content > :nth-child(2) {
+    animation-delay: 20ms;
+  }
+
+  #stage #album-detail-content > :nth-child(3) {
+    animation-delay: 36ms;
+  }
+
+  #stage #album-detail-content > .music-tabs {
+    animation: none;
   }
 
   #stage .music-tabs {
@@ -890,116 +1347,205 @@
   }
 
   #stage #album-detail-content > h1 {
-    font-size: 25px;
-    line-height: 1.22;
-    margin-bottom: 8px;
+    font-size: 24px;
+    line-height: 1.28;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
   }
 
   #stage .detail-overline {
-    margin-bottom: 12px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+    font-family: var(--mobile-mono);
     font-size: 8px;
-    gap: 10px;
-  }
-
-  #stage .detail-overline button {
-    min-height: 44px;
-    font-size: 12px;
+    letter-spacing: 1.2px;
+    color: var(--muted);
   }
 
   #stage .detail-album-navigation {
-    gap: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #stage .detail-overline button {
+    min-height: 40px;
+    padding: 0 2px;
+    border-bottom: 1px solid transparent;
+    font-size: 10.5px;
+    letter-spacing: 0.2px;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  #stage .detail-overline button:active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
   }
 
   #stage .detail-artist {
-    font-size: 13px;
-    margin-bottom: 16px;
-  }
-
-  #stage .album-facts {
-    grid-template-columns: 1fr 1fr;
-    gap: 12px 14px;
-    padding: 14px 0;
-  }
-
-  #stage .album-facts small {
-    font-size: 7.5px;
-    letter-spacing: 0.8px;
-  }
-
-  #stage .album-facts span {
-    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
     line-height: 1.5;
+    margin: 0 0 12px;
+    color: var(--muted);
   }
 
   #stage .mobile-play-all-row {
     display: block !important;
-    margin: 2px 0 18px;
+    margin: 2px 0 14px;
   }
 
   #stage .mobile-play-all {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 10px;
+    justify-content: flex-start;
+    gap: 9px;
     width: 100%;
-    min-height: 54px;
-    border-radius: 17px;
-    background: var(--ink);
-    color: var(--surface);
-    font-size: 15px;
-    letter-spacing: 0.6px;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+    min-height: 48px;
+    padding: 0 2px;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accent) 62%, transparent);
+    border-bottom: 1px solid var(--mobile-rule);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: none;
+  }
+
+  #stage .mobile-play-all::after {
+    content: "↗";
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--accent);
   }
 
   #stage .mobile-play-all:active {
-    transform: scale(0.985);
+    color: var(--accent);
+    transform: none;
   }
 
   #stage .mobile-play-all svg {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
+    color: var(--accent);
   }
 
   #stage .mobile-play-all span {
-    font-size: 11px;
+    font-family: var(--mobile-mono);
+    font-size: 10px;
+    font-weight: 400;
     opacity: 0.72;
     letter-spacing: 0;
   }
 
+  #stage .album-facts {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 16px;
+    padding: 11px 0;
+    border-top: 1px solid var(--mobile-rule-strong);
+    border-bottom: 1px solid var(--mobile-rule);
+  }
+
+  #stage .album-facts small {
+    font-family: var(--mobile-mono);
+    font-size: 6.5px;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+
+  #stage .album-facts span {
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+
   #stage .music-tabs {
-    gap: 4px;
-    margin: 4px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0 0 2px;
+    padding-top: 2px;
+    border-bottom: 1px solid var(--mobile-rule);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: color-mix(in srgb, var(--page-bg) 86%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 
   #stage .music-tabs > button[role="tab"] {
-    min-height: 46px;
-    font-size: 13px;
+    min-height: 44px;
+    padding: 11px 0 9px;
+    font-size: 12px;
+    font-weight: 500;
     letter-spacing: 0.3px;
+    color: var(--muted);
+    background: transparent;
+  }
+
+  #stage .music-tabs > button[aria-selected="true"] {
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   #stage .music-tabs > button > span {
-    font-size: 10px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    margin-right: 6px;
+  }
+
+  #stage .music-tab-indicator {
+    height: 2px;
+    background: var(--accent);
+  }
+
+  #stage #album-tab-content {
+    padding-top: 2px;
   }
 
   #stage .track-row {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 9px;
     min-height: 52px;
-    padding: 11px 0;
+    padding: 10px 0;
+  }
+
+  #stage .track-row:hover {
+    background: transparent;
+    color: var(--accent);
   }
 
   #stage .track-number {
-    font-size: 10px;
+    font-family: var(--mobile-mono);
+    font-size: 9.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
 
   #stage .track-name strong {
-    font-size: 14px;
+    font-size: 13.5px;
+    font-weight: 500;
     line-height: 1.35;
+    letter-spacing: 0.1px;
   }
 
   #stage .track-name small {
-    font-size: 11px;
+    font-size: 10px;
     margin-top: 3px;
+    color: var(--muted);
   }
 
   #stage .track-format {
@@ -1007,18 +1553,38 @@
   }
 
   #stage .track-duration {
-    font-size: 11px;
+    font-family: var(--mobile-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  #stage .track-row.playing {
+    color: var(--accent);
+  }
+
+  #stage .track-tools {
+    gap: 0;
   }
 
   #stage .track-tools button {
-    min-width: 44px;
+    min-width: 42px;
     min-height: 48px;
-    font-size: 18px;
+    font-size: 17px;
+    color: var(--muted);
+    background: transparent;
+  }
+
+  #stage .track-tools button:active {
+    color: var(--accent);
+    background: transparent;
   }
 
   #stage .disc-heading {
-    font-size: 9px;
-    padding: 16px 0 6px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 1.2px;
+    padding: 14px 0 5px;
+    color: var(--muted);
   }
 
   #stage .empty-tracks strong {
@@ -1026,7 +1592,9 @@
   }
 
   #stage .empty-tracks p {
-    font-size: 12.5px;
+    font-size: 12px;
+    line-height: 1.75;
+    color: var(--muted);
   }
 
   #stage .empty-tracks button {
@@ -1035,29 +1603,42 @@
   }
 
   #stage .album-about > small {
-    font-size: 8.5px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 1.3px;
+    color: var(--muted);
   }
 
   #stage .album-about h3 {
     font-size: 15px;
+    font-weight: 600;
   }
 
   #stage .album-about p {
-    font-size: 13.5px;
+    font-size: 13px;
     line-height: 1.85;
   }
 
-  /* Inline text actions inside the album pane need a real touch row. */
+  #stage .source-note {
+    font-size: 10px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  #stage .genre-tags span {
+    font-size: 10px;
+  }
+
   #stage #album-detail-content :is(.text-button, .producer-section button) {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
     padding: 0 2px;
-    font-size: 12.5px;
+    font-size: 12px;
   }
 
   /* ------------------------------------------------------------------ */
-  /* 6. Panels become full-screen sheets                                 */
+  /* 7. Panels become full-screen glass sheets                           */
   /* ------------------------------------------------------------------ */
 
   #stage .music-panel-scrim {
@@ -1068,9 +1649,9 @@
     align-items: stretch;
     justify-content: stretch;
     padding: 0;
-    background: color-mix(in srgb, var(--page-bg) 55%, transparent);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    background: color-mix(in srgb, var(--page-bg) 46%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 
   #stage .music-panel {
@@ -1081,12 +1662,15 @@
     max-height: none;
     box-sizing: border-box;
     border: 0;
+    border-top: 1px solid var(--mobile-rule-strong);
     border-radius: 0;
     box-shadow: none;
     overflow: hidden;
     padding: calc(var(--mobile-safe-top) + 6px) var(--mobile-edge)
       calc(var(--mobile-safe-bottom) + 10px);
-    background: var(--page-bg);
+    background: color-mix(in srgb, var(--page-bg) 90%, transparent);
+    backdrop-filter: blur(20px) saturate(1.05);
+    -webkit-backdrop-filter: blur(20px) saturate(1.05);
   }
 
   #stage .panel-heading {
@@ -1094,19 +1678,21 @@
     align-items: center;
     margin-bottom: 6px;
     padding: 4px 0 12px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--mobile-rule);
     touch-action: pan-x;
   }
 
   #stage .panel-heading small {
-    font-size: 9px;
-    letter-spacing: 2px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 1.8px;
   }
 
   #stage .panel-heading h2 {
     font-size: 21px;
     margin-top: 5px;
     letter-spacing: -0.2px;
+    font-weight: 600;
   }
 
   #stage .panel-heading > button {
@@ -1115,15 +1701,18 @@
     height: 44px;
     display: grid;
     place-items: center;
-    font-size: 26px;
+    font-size: 24px;
     line-height: 1;
-    border: 1px solid var(--line);
+    border: 1px solid var(--mobile-rule);
     border-radius: 50%;
     color: var(--ink);
+    background: transparent;
   }
 
   #stage .panel-heading > button:active {
-    background: var(--veil);
+    border-color: var(--accent);
+    color: var(--accent);
+    background: transparent;
   }
 
   #stage #panel-body {
@@ -1157,7 +1746,7 @@
   #stage .music-panel input[type="url"] {
     min-height: 48px;
     font-size: 14px;
-    border-radius: 12px;
+    border-radius: 2px;
   }
 
   #stage .music-panel textarea {
@@ -1238,8 +1827,6 @@
     min-height: 52px;
   }
 
-  /* Long-form credit links sit on their own lines; give them a thumb row
-     without breaking the paragraph rhythm. */
   #stage #panel-body p a,
   #stage #panel-body .panel-section > a {
     display: inline-flex;
@@ -1257,7 +1844,7 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* 7. Empty library: explanation + native import / download            */
+  /* 8. Empty library: explanation + native import / download            */
   /* ------------------------------------------------------------------ */
 
   #stage #music-empty {
@@ -1276,28 +1863,30 @@
   }
 
   #stage #music-empty small {
-    font-size: 9px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
     letter-spacing: 2.4px;
+    color: var(--muted);
   }
 
   #stage #music-empty h1 {
     font-size: 26px;
     line-height: 1.28;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.2px;
     margin: 14px 0 10px;
+    font-weight: 600;
   }
 
   #stage #music-empty p {
     font-size: 13px;
     line-height: 1.8;
+    color: var(--muted);
   }
 
-  /* The desktop explanation is replaced by the mobile note below. */
   #stage #music-empty > p {
     display: none;
   }
 
-  /* Both legacy entries are replaced by the native block below. */
   #stage #music-empty > button {
     display: none;
   }
@@ -1310,7 +1899,7 @@
   #stage .mobile-native-panel {
     margin: 0 0 14px;
     padding: 0 0 14px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--mobile-rule);
   }
 
   #stage .mobile-native-note {
@@ -1326,8 +1915,6 @@
     gap: 10px;
   }
 
-  /* Neutralise the legacy `.music-empty button` block style (centred, dark)
-     without out-ranking the specific buttons below. */
   #stage :where(.mobile-native-block) button {
     display: flex;
     align-items: center;
@@ -1346,7 +1933,7 @@
     gap: 9px;
     min-height: 52px;
     padding: 0 16px;
-    border-radius: 15px;
+    border-radius: 2px;
     background: var(--ink);
     color: var(--surface);
     font-size: 14px;
@@ -1356,11 +1943,12 @@
   #stage .mobile-native-primary.ghost {
     background: transparent;
     color: var(--ink);
-    border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+    border: 1px solid var(--mobile-rule-strong);
   }
 
   #stage .mobile-native-primary:active {
-    transform: scale(0.99);
+    transform: none;
+    opacity: 0.82;
   }
 
   #stage .mobile-native-icon {
@@ -1381,7 +1969,7 @@
   }
 
   #stage .mobile-native-hint[data-tone="ok"] {
-    color: var(--accent);
+    color: var(--mobile-accent-text);
   }
 
   #stage .mobile-native-quiet {
@@ -1393,7 +1981,7 @@
     padding: 0 10px;
     font-size: 12.5px;
     color: var(--muted);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--mobile-rule);
     align-self: flex-start;
   }
 
@@ -1401,60 +1989,8 @@
     margin-top: 14px;
   }
 
-  #stage .mobile-download {
-    display: grid;
-    gap: 8px;
-    margin-top: 16px;
-  }
-
-  #stage .mobile-download label {
-    font-size: 10px;
-    letter-spacing: 1.2px;
-    color: var(--muted);
-  }
-
-  #stage .mobile-download input {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 48px;
-    padding: 0 13px;
-    border: 1px solid var(--line);
-    border-radius: 13px;
-    background: var(--surface);
-    color: var(--ink);
-    font-size: 14px;
-  }
-
-  #stage .mobile-download-row {
-    display: flex;
-    gap: 10px;
-    margin-top: 4px;
-  }
-
-  #stage .mobile-download-row .mobile-native-primary {
-    flex: 1 1 auto;
-    min-height: 48px;
-  }
-
-  #stage .mobile-download-status {
-    display: grid;
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  #stage .mobile-download-status progress {
-    width: 100%;
-    height: 6px;
-    accent-color: var(--accent);
-  }
-
-  #stage .mobile-download-status span {
-    font-size: 11.5px;
-    color: var(--muted);
-  }
-
   /* ------------------------------------------------------------------ */
-  /* 8. Chrome cleanup: no overlapping diagnostics on a phone            */
+  /* 9. Chrome cleanup: no overlapping diagnostics on a phone            */
   /* ------------------------------------------------------------------ */
 
   #stage .music-bottomline,
@@ -1472,7 +2008,11 @@
     width: auto;
     font-size: 12.5px;
     padding: 12px 16px;
-    border-radius: 14px;
+    border-radius: 2px;
+    border: 1px solid var(--mobile-rule);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 
   #stage #music-toast.visible {
@@ -1480,22 +2020,31 @@
   }
 
   #stage #music-loading strong {
-    font-size: 12px;
+    font-family: var(--mobile-mono);
+    font-size: 10px;
+    letter-spacing: 1.6px;
   }
 
   /* ------------------------------------------------------------------ */
-  /* 9. Motion preferences                                               */
+  /* 10. Motion preferences                                             */
   /* ------------------------------------------------------------------ */
 
   #stage.reduce-motion .mobile-now,
   #stage.reduce-motion .mobile-now-track b,
-  #stage.reduce-motion .mobile-now-lyric {
+  #stage.reduce-motion .mobile-now-lyric,
+  #stage.reduce-motion .mobile-now-cover img,
+  #stage.reduce-motion .mobile-mini-cover img,
+  #stage.reduce-motion .open-album > span {
     transition: none;
+    animation: none;
+  }
+
+  #stage.reduce-motion #album-detail-content > * {
+    animation: none;
   }
 
   #stage.reduce-motion .mobile-now-controls button:active,
-  #stage.reduce-motion .mobile-play-all:active,
-  #stage.reduce-motion .mobile-native-primary:active {
+  #stage.reduce-motion .open-album:active > span {
     transform: none;
   }
 }
@@ -1503,16 +2052,51 @@
 @media (max-width: 700px) and (prefers-reduced-motion: reduce) {
   #stage .mobile-now,
   #stage .mobile-now-track b,
-  #stage .mobile-now-lyric {
+  #stage .mobile-now-lyric,
+  #stage .mobile-now-cover img,
+  #stage .mobile-mini-cover img,
+  #stage .open-album > span,
+  #stage #album-detail-content > * {
     transition: none;
+    animation: none;
   }
 }
 
-/* Short phones (e.g. the 360×640 test rig): keep the artwork compact. */
-@media (max-width: 700px) and (max-height: 680px) {
+/* Short phones: keep the glass plate useful without crushing the 3D card. */
+@media (max-width: 700px) and (max-height: 740px) {
+  #stage.music-app {
+    --mobile-mini-h: 58px;
+    --mobile-nav-h: 78px;
+    --mobile-edge: 16px;
+  }
+
+  #stage .album-callout,
+  #stage.music-app[data-layout="portrait"] .album-callout {
+    top: 48%;
+    padding-top: 12px;
+  }
+
+  #stage .album-callout::after {
+    display: none;
+  }
+
+  #stage .music-counter b {
+    font-size: 22px;
+  }
+
+  #stage .genre-stepper {
+    margin-top: 3px;
+    padding-top: 2px;
+  }
+
+  #stage #album-detail-content,
+  #stage.music-app[data-lyrics-visible="true"][data-mode="detail"] #album-detail-content {
+    top: 41%;
+    padding-top: 11px;
+  }
+
   #stage .mobile-now-cover {
-    width: min(52vw, 220px);
-    border-radius: 18px;
+    width: min(58vw, 240px);
   }
 
   #stage .mobile-now-meta {
@@ -1520,12 +2104,7 @@
   }
 
   #stage .mobile-now-meta strong {
-    font-size: 18px;
-  }
-
-  #stage .mobile-now-controls .mobile-now-play {
-    width: 62px;
-    height: 62px;
+    font-size: 19px;
   }
 }
 
@@ -1534,15 +2113,55 @@
     --mobile-edge: 14px;
   }
 
-  #stage .album-callout h1 {
-    font-size: 23px;
+  #stage .music-topnav > button {
+    width: 40px;
   }
 
   #stage .music-brand span {
     display: none;
   }
 
+  #stage .album-callout h1 {
+    font-size: var(--album-title-size, 23px);
+  }
+
   #stage .mobile-mini-copy strong {
     font-size: 12.5px;
+  }
+
+  #stage .genre-stepper small {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* V2 perf: blur is the most expensive per-frame composite on phones.  */
+/* The archive scene sits behind these always-visible surfaces, so keep */
+/* their glass look through translucent gradients instead of a live    */
+/* backdrop blur; transient sheets keep their blur (opened on demand). */
+/* ------------------------------------------------------------------ */
+@media (max-width: 700px) {
+  #stage .album-callout,
+  #stage .music-navigation,
+  #stage .mobile-mini {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  #stage .album-callout {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--panel) 90%, transparent) 0%,
+        color-mix(in srgb, var(--panel) 84%, transparent) 100%
+      ) !important;
+  }
+
+  #stage .music-navigation {
+    background: color-mix(in srgb, var(--panel) 92%, transparent) !important;
+  }
+
+  #stage .mobile-mini {
+    background: color-mix(in srgb, var(--panel) 95%, transparent) !important;
   }
 }

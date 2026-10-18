@@ -1,0 +1,893 @@
+/* ==========================================================================
+   Rhine Music · network download / Bilibili cache sheet (≤700 px only)
+   Inert above 700 px. See src/mobile-network.ts for the DOM and behaviour.
+   ========================================================================== */
+
+.mobile-net-entry,
+.mobile-sheet {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  #stage.music-app {
+    --mobile-danger: color-mix(in srgb, #b95038 82%, var(--ink));
+    --mobile-glass-line: color-mix(in srgb, var(--ink) 14%, transparent);
+    --mobile-glass-fill: color-mix(in srgb, var(--panel) 72%, transparent);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Header entry                                                        */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-net-entry {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: 0;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  #stage .mobile-net-entry svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  #stage .mobile-net-entry::after {
+    content: "";
+    position: absolute;
+    right: 11px;
+    top: 11px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.9;
+  }
+
+  #stage .mobile-net-entry:active {
+    color: var(--accent);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Sheet shell                                                         */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-sheet {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: stretch;
+    background: color-mix(in srgb, var(--page-bg) 36%, transparent);
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+    opacity: 0;
+    transition: opacity 240ms var(--mobile-ease);
+  }
+
+  #stage .mobile-sheet[hidden] {
+    display: none !important;
+  }
+
+  #stage .mobile-sheet.is-open {
+    opacity: 1;
+  }
+
+  #stage .mobile-sheet-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding-top: var(--mobile-safe-top);
+    background:
+      radial-gradient(
+        120% 36% at 92% 0%,
+        color-mix(in srgb, var(--accent) 11%, transparent) 0%,
+        transparent 62%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--page-bg) 86%, transparent) 0%,
+        color-mix(in srgb, var(--page-bg) 80%, transparent) 42%,
+        color-mix(in srgb, var(--page-bg) 89%, transparent) 100%
+      );
+    backdrop-filter: blur(22px) saturate(1.06);
+    -webkit-backdrop-filter: blur(22px) saturate(1.06);
+    border-top: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+    transform: translateY(102%);
+    transition: transform 280ms var(--mobile-ease);
+    will-change: transform;
+  }
+
+  #stage .mobile-sheet-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.045;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+  }
+
+  #stage .mobile-sheet-panel > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  #stage .mobile-sheet.is-open .mobile-sheet-panel {
+    transform: translateY(0);
+  }
+
+  #stage .mobile-sheet-head {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px var(--mobile-edge) 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+    touch-action: pan-x;
+  }
+
+  #stage .mobile-sheet-handle {
+    position: absolute;
+    left: 50%;
+    top: 6px;
+    width: 40px;
+    height: 2px;
+    margin-left: -20px;
+    background: color-mix(in srgb, var(--ink) 26%, transparent);
+  }
+
+  #stage .mobile-sheet-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  #stage .mobile-sheet-title small {
+    display: block;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-sheet-title h2 {
+    margin: 5px 0 0;
+    font-size: 22px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+
+  #stage .mobile-sheet-close {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+    border-radius: 50%;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  #stage .mobile-sheet-close svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  #stage .mobile-sheet-close:active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  #stage .mobile-sheet-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px var(--mobile-edge) calc(var(--mobile-safe-bottom) + 36px);
+    display: grid;
+    align-content: start;
+    gap: 24px;
+    scrollbar-width: none;
+  }
+
+  #stage .mobile-sheet-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Shared section typography */
+
+  #stage .mobile-net-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-height: 20px;
+    border-bottom: 1px solid var(--mobile-glass-line);
+    padding-bottom: 7px;
+    margin-bottom: 10px;
+  }
+
+  #stage .mobile-net-section-head small {
+    font-family: var(--mobile-mono);
+    font-size: 7.5px;
+    letter-spacing: 1.6px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-net-section-head > span {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  #stage .mobile-net-section-head > button {
+    margin-left: auto;
+  }
+
+  #stage .mobile-net-quiet {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 4px;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    color: var(--muted);
+    border-bottom: 1px solid transparent;
+  }
+
+  #stage .mobile-net-quiet:active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  #stage .mobile-net-quiet:disabled {
+    opacity: 0.34;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* URL + resolve                                                       */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-net-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 2px;
+  }
+
+  #stage .mobile-net-label > span {
+    font-family: var(--mobile-mono);
+    font-size: 8.5px;
+    letter-spacing: 1.8px;
+    color: var(--ink);
+  }
+
+  #stage .mobile-net-label > small {
+    font-size: 9.5px;
+    letter-spacing: 0.2px;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  #stage .mobile-net-label > small[data-tone="ok"] {
+    color: var(--mobile-accent-text);
+  }
+
+  #stage .mobile-net-label > small[data-tone="warn"] {
+    color: var(--mobile-danger);
+  }
+
+  #stage .mobile-net-field {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid color-mix(in srgb, var(--ink) 32%, transparent);
+  }
+
+  #stage .mobile-net-field:focus-within {
+    border-bottom-color: var(--accent);
+  }
+
+  #stage .mobile-net-field input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 52px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 15px;
+    letter-spacing: 0.1px;
+    outline: none;
+  }
+
+  #stage .mobile-net-field input::placeholder {
+    color: color-mix(in srgb, var(--muted) 78%, transparent);
+    font-size: 13px;
+  }
+
+  #stage .mobile-net-resolve-button {
+    flex: 0 0 auto;
+    min-width: 62px;
+    min-height: 44px;
+    align-self: center;
+    padding: 0 4px 0 12px;
+    border-left: 1px solid var(--mobile-glass-line);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    color: var(--ink);
+    background: transparent;
+  }
+
+  #stage .mobile-net-resolve-button:disabled {
+    opacity: 0.34;
+  }
+
+  #stage .mobile-net-resolve-button:not(:disabled):active {
+    color: var(--accent);
+  }
+
+  #stage .mobile-net-tip {
+    margin: 9px 0 0;
+    font-size: 10.5px;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Result                                                              */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-net-result {
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 2px 14px;
+    padding: 4px 0 0;
+  }
+
+  #stage .mobile-net-cover {
+    position: relative;
+    width: 70px;
+    height: 70px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--mobile-glass-line);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    color: var(--muted);
+    font-size: 22px;
+  }
+
+  #stage .mobile-net-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #stage .mobile-net-result-copy {
+    min-width: 0;
+    padding-top: 3px;
+  }
+
+  #stage .mobile-net-result-copy small {
+    display: block;
+    font-family: var(--mobile-mono);
+    font-size: 7.5px;
+    letter-spacing: 1.6px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-net-result-copy strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    margin-top: 4px;
+    font-size: 15.5px;
+    line-height: 1.35;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+    overflow-wrap: anywhere;
+  }
+
+  #stage .mobile-net-result-copy > span {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .mobile-net-result-note {
+    grid-column: 1 / -1;
+    margin: 12px 0 0;
+    padding: 9px 0 9px 11px;
+    border-left: 2px solid var(--mobile-danger);
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--mobile-danger) 7%, transparent);
+  }
+
+  #stage .mobile-net-download {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 50px;
+    margin-top: 14px;
+    padding: 0 2px;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+    border-bottom: 1px solid var(--mobile-glass-line);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+  }
+
+  #stage .mobile-net-download i {
+    display: inline-grid;
+    place-items: center;
+    color: var(--accent);
+  }
+
+  #stage .mobile-net-download i svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  #stage .mobile-net-download:disabled {
+    opacity: 0.42;
+  }
+
+  #stage .mobile-net-download:not(:disabled):active {
+    color: var(--accent);
+  }
+
+  #stage .mobile-net-scan {
+    width: 30px;
+    height: 30px;
+    border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: mobile-net-spin 900ms linear infinite;
+  }
+
+  #stage .mobile-net-error-mark {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--mobile-danger);
+    border-radius: 50%;
+    color: var(--mobile-danger);
+    font-family: var(--mobile-mono);
+    font-size: 15px;
+  }
+
+  @keyframes mobile-net-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Download progress                                                   */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-net-progress {
+    padding: 2px 0 0;
+  }
+
+  #stage .mobile-net-progress-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  #stage .mobile-net-progress-head small {
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 1.7px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-net-progress-head b {
+    font-family: var(--mobile-mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .mobile-progress-rail {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--ink) 14%, transparent);
+  }
+
+  #stage .mobile-progress-rail i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 220ms linear;
+  }
+
+  #stage .mobile-progress-rail.is-indeterminate i {
+    transform: scaleX(0.34) !important;
+    animation: mobile-net-indeterminate 1.25s var(--mobile-ease) infinite;
+    transform-origin: left center;
+  }
+
+  @keyframes mobile-net-indeterminate {
+    0% { transform: translateX(-120%) scaleX(0.32); }
+    55% { transform: translateX(150%) scaleX(0.5); }
+    100% { transform: translateX(320%) scaleX(0.32); }
+  }
+
+  #stage .mobile-net-progress-text {
+    margin: 9px 0 0;
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .mobile-net-progress[data-tone="error"] .mobile-net-progress-text {
+    color: var(--mobile-danger);
+  }
+
+  #stage .mobile-net-progress[data-tone="done"] .mobile-net-progress-text {
+    color: var(--mobile-accent-text);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* History                                                             */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-net-history-list {
+    display: grid;
+  }
+
+  #stage .mobile-net-history-empty {
+    margin: 0;
+    padding: 10px 0 4px;
+    font-size: 11px;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  #stage .mobile-net-history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 46px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--mobile-glass-line);
+    text-align: left;
+    background: transparent;
+  }
+
+  #stage .mobile-net-history-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  #stage .mobile-net-history-copy strong {
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #stage .mobile-net-history-copy small {
+    font-size: 9.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #stage .mobile-net-history-meta {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+  }
+
+  #stage .mobile-net-history-meta i {
+    font-style: normal;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-net-history-meta i[data-status="downloading"],
+  #stage .mobile-net-history-meta i[data-status="done"] {
+    color: var(--mobile-accent-text);
+  }
+
+  #stage .mobile-net-history-meta i[data-status="error"] {
+    color: var(--mobile-danger);
+  }
+
+  #stage .mobile-net-history-meta small {
+    font-size: 9px;
+    color: color-mix(in srgb, var(--muted) 80%, transparent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .mobile-net-history-item:active {
+    color: var(--accent);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Bilibili cache                                                      */
+  /* ------------------------------------------------------------------ */
+
+  #stage .mobile-bili-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 11px 0;
+    border-top: 1px solid color-mix(in srgb, var(--ink) 26%, transparent);
+    border-bottom: 1px solid var(--mobile-glass-line);
+    margin-bottom: 10px;
+  }
+
+  #stage .mobile-bili-facts small {
+    display: block;
+    font-family: var(--mobile-mono);
+    font-size: 7px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  #stage .mobile-bili-facts span {
+    display: block;
+    font-size: 12.5px;
+    line-height: 1.35;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #stage .mobile-bili-facts span[data-tone="ok"] {
+    color: var(--mobile-accent-text);
+  }
+
+  #stage .mobile-bili-facts span[data-tone="muted"] {
+    color: var(--muted);
+  }
+
+  #stage .mobile-bili-path,
+  #stage .mobile-bili-muted {
+    margin: 0 0 10px;
+    font-size: 10.5px;
+    line-height: 1.7;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  #stage .mobile-bili-path code,
+  #stage .mobile-bili-help code {
+    font-family: var(--mobile-mono);
+    font-size: 9.5px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    padding: 1px 3px;
+    overflow-wrap: anywhere;
+  }
+
+  #stage .mobile-bili-actions {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0 2px;
+  }
+
+  #stage .mobile-bili-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 50px;
+    padding: 0 14px;
+    border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    text-align: left;
+  }
+
+  #stage .mobile-bili-action::after {
+    content: "→";
+    font-size: 15px;
+    line-height: 1;
+    color: var(--muted);
+  }
+
+  #stage .mobile-bili-action#mobile-bili-root {
+    border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  }
+
+  #stage .mobile-bili-action#mobile-bili-root::after {
+    color: var(--accent);
+  }
+
+  #stage .mobile-bili-action:disabled {
+    opacity: 0.34;
+  }
+
+  #stage .mobile-bili-action:disabled::after {
+    color: var(--muted);
+  }
+
+  #stage .mobile-bili-action:not(:disabled):active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  #stage .mobile-bili-progress {
+    margin: 16px 0 2px;
+    padding-top: 2px;
+  }
+
+  #stage .mobile-bili-progress[data-tone="done"] .mobile-net-progress-text {
+    color: var(--mobile-accent-text);
+  }
+
+  #stage .mobile-bili-progress[data-tone="error"] .mobile-net-progress-text,
+  #stage .mobile-bili-progress[data-tone="error"] .mobile-net-progress-head small {
+    color: var(--mobile-danger);
+  }
+
+  #stage .mobile-bili-progress[data-tone="error"] .mobile-progress-rail i {
+    background: var(--mobile-danger);
+  }
+
+  #stage .mobile-bili-progress[data-tone="done"] .mobile-progress-rail i {
+    background: var(--accent);
+  }
+
+  #stage .mobile-bili-help {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--mobile-glass-line);
+  }
+
+  #stage .mobile-bili-help h3 {
+    margin: 0 0 8px;
+    font-family: var(--mobile-mono);
+    font-size: 8px;
+    font-weight: 400;
+    letter-spacing: 1.4px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-bili-help ol {
+    margin: 0;
+    padding-left: 17px;
+    display: grid;
+    gap: 6px;
+  }
+
+  #stage .mobile-bili-help li {
+    font-size: 11px;
+    line-height: 1.7;
+    color: color-mix(in srgb, var(--ink) 82%, transparent);
+  }
+
+  #stage .mobile-bili-help li b {
+    font-weight: 600;
+  }
+
+  #stage .mobile-adb {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+  }
+
+  #stage .mobile-adb code {
+    display: block;
+    padding: 0;
+    background: transparent;
+    font-size: 9.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    word-break: break-all;
+  }
+
+  #stage .mobile-adb .mobile-net-quiet {
+    justify-self: end;
+    min-height: 36px;
+    color: var(--muted);
+  }
+
+  #stage .mobile-adb-copy-icon {
+    display: inline-grid;
+    place-items: center;
+  }
+
+  #stage .mobile-adb-copy-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  #stage .mobile-bili-foot {
+    margin: 12px 0 0;
+    font-size: 10px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reduced motion                                                      */
+  /* ------------------------------------------------------------------ */
+
+  #stage.reduce-motion .mobile-sheet,
+  #stage.reduce-motion .mobile-sheet-panel,
+  #stage.reduce-motion .mobile-progress-rail i,
+  #stage.reduce-motion .mobile-net-download,
+  #stage.reduce-motion .mobile-net-history-item {
+    transition: none !important;
+  }
+
+  #stage.reduce-motion .mobile-net-scan,
+  #stage.reduce-motion .mobile-progress-rail.is-indeterminate i {
+    animation: none;
+  }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  #stage .mobile-sheet,
+  #stage .mobile-sheet-panel,
+  #stage .mobile-progress-rail i,
+  #stage .mobile-net-download,
+  #stage .mobile-net-history-item {
+    transition: none !important;
+  }
+
+  #stage .mobile-net-scan,
+  #stage .mobile-progress-rail.is-indeterminate i {
+    animation: none;
+  }
+}
+

@@ -106,6 +106,9 @@ const preferences = {
     sound: true,
     soundVolume: 0.22,
     renderQuality: undefined as RenderQuality | undefined,
+    // Bumped when the phone shell changes its own defaults, so a forced V1
+    // "performance" choice can be upgraded without touching real user choices.
+    mobileShellVersion: 0 as number,
   },
   ...read<
     Partial<{
@@ -120,6 +123,7 @@ const preferences = {
       sound: boolean;
       soundVolume: number;
       renderQuality: RenderQuality;
+      mobileShellVersion: number;
     }>
   >("rhine-music-preferences", {}),
 };
@@ -138,11 +142,30 @@ const prefersReducedMotion =
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 if (isMobileShell()) {
   const softwareRenderer = gpuCapability.mode === "software";
-  if (!storedPreferences || softwareRenderer) {
-    preferences.quality = "performance";
-    preferences.renderQuality = qualityPresets.performance;
+  const MOBILE_SHELL_VERSION = 2;
+  // V1 phones were forced onto the performance preset, so an old saved
+  // "performance" value is not a real user choice. Upgrade it once to the
+  // signature mobile preset while leaving genuinely custom settings alone.
+  const forcedV1Preset =
+    storedPreferences &&
+    preferences.quality === "performance" &&
+    preferences.mobileShellVersion !== MOBILE_SHELL_VERSION &&
+    (!preferences.renderQuality ||
+      Object.entries(qualityPresets.performance).every(
+        ([key, value]) =>
+          preferences.renderQuality?.[key as keyof RenderQuality] === value,
+      ));
+  // Phones keep the glass archive look: full device pixels with baked shadows.
+  // Only a software rasterizer falls back to the cheap preset. Motion stays on
+  // unless the device is software-rendered or the system asks for less motion.
+  if (!storedPreferences || softwareRenderer || forcedV1Preset) {
+    preferences.quality = softwareRenderer ? "performance" : "mobile";
+    preferences.renderQuality = softwareRenderer
+      ? qualityPresets.performance
+      : qualityPresets.mobile;
   }
   if (softwareRenderer || prefersReducedMotion) preferences.reduced = true;
+  preferences.mobileShellVersion = MOBILE_SHELL_VERSION;
   save("rhine-music-preferences", preferences);
 }
 let renderQuality = normalizeQuality(
@@ -247,6 +270,7 @@ const stage = $("#stage");
 stage.className = "music-app";
 stage.dataset.mode = "archive";
 stage.dataset.theme = preferences.theme;
+stage.dataset.renderIdle = "false";
 stage.innerHTML = `
   <div id="three-scene" class="three-scene"></div>
   <div class="music-vignette" aria-hidden="true"></div>
@@ -516,6 +540,7 @@ function setTheme(theme: Theme) {
       theme === "night" ? "#0a1220" : theme === "dusk" ? "#cbd6df" : "#e8e5e1",
     );
   savePrefs();
+  wakeScene();
 }
 function fit() {
   // Use the same stage dimensions and aspect boundary as the scene framing.
@@ -686,6 +711,7 @@ async function applyLibrary() {
         scene.setTheme(preferences.theme);
         scene.setQuality(renderQuality);
         scene.setReduced(preferences.reduced);
+        if (isMobileShell()) scene.enableMobileRendering();
         bindSceneNavigation(scene);
       }
       await scene.refreshLibrary(selected);
@@ -1641,6 +1667,7 @@ function updateQuality() {
   if (summary)
     summary.textContent = `渲染 ${renderQuality.scale}% · 像素上限 ${renderQuality.pixelRatio}× · ${renderQuality.antialias === "off" ? "原始抗锯齿" : "SMAA"}`;
   savePrefs();
+  wakeScene();
 }
 async function editGenres() {
   const body = document.querySelector("#panel-body");
@@ -2136,9 +2163,43 @@ document.addEventListener("keydown", (e) => {
 });
 
 let lastFrame = 0,
-  frameCount = 0;
+  frameCount = 0,
+  frameQueued = false,
+  idleRefreshTimer: number | undefined;
+
+function runtimeInfo(fps: number | null) {
+  const buffer = document.querySelector<HTMLCanvasElement>("#three-scene canvas");
+  const state = fps === null ? "IDLE 空闲停帧" : `${fps} FPS`;
+  $("#runtime-info").textContent =
+    `rAF诊断 ${state} / ${buffer?.width ?? 0}×${buffer?.height ?? 0} / ${themeNames[preferences.theme]} / ${gpuCapability.api}${gpuCapability.mode === "software" ? " 软件渲染" : gpuCapability.mode === "hardware" ? " 显卡加速" : ""}`;
+}
+
+function scheduleFrame() {
+  if (frameQueued) return;
+  frameQueued = true;
+  requestAnimationFrame((ms) => {
+    frameQueued = false;
+    frame(ms);
+  });
+}
+
+/** Any input restarts a loop the phone shell parked while the archive was still. */
+function wakeScene() {
+  if (!scene || !ready) return;
+  const wasIdle = scene.renderIdle || stage.dataset.renderIdle === "true";
+  scene.wake();
+  if (wasIdle) {
+    stage.dataset.renderIdle = "false";
+    lastFrame = 0;
+    frameCount = 0;
+  }
+  scheduleFrame();
+}
+
 function frame(ms: number) {
+  let keepRendering = true;
   if (!document.hidden && scene) {
+    if (!lastFrame) lastFrame = ms;
     const frameStartedAt = performance.now();
     const opening = boot?.update(ms / 1000);
     if (!viewer?.isOpen) scene.update(ms / 1000, opening?.cinema);
@@ -2172,9 +2233,7 @@ function frame(ms: number) {
     }
     frameCount++;
     if (ms - lastFrame > 1500) {
-      const buffer = document.querySelector<HTMLCanvasElement>("#three-scene canvas");
-      $("#runtime-info").textContent =
-        `rAF诊断 ${Math.round((frameCount * 1000) / (ms - lastFrame))} FPS / ${buffer?.width ?? 0}×${buffer?.height ?? 0} / ${themeNames[preferences.theme]} / ${gpuCapability.api}${gpuCapability.mode === "software" ? " 软件渲染" : gpuCapability.mode === "hardware" ? " 显卡加速" : ""}`;
+      runtimeInfo(Math.round((frameCount * 1000) / Math.max(1, ms - lastFrame)));
       // Keep read-only render diagnostics alongside the existing resolution
       // attributes, without adding controls or per-frame DOM work.
       if (!viewer?.isOpen) {
@@ -2212,12 +2271,40 @@ function frame(ms: number) {
       lastFrame = ms;
     }
     scene.recordProfileFrame(ms, performance.now() - frameStartedAt);
+    if (scene.renderIdle && !viewer?.isOpen && !boot?.active) {
+      // Phone only: the archive is at rest, stop scheduling frames. The app
+      // stays interactive through wakeScene()'s document input listeners.
+      keepRendering = false;
+      if (stage.dataset.renderIdle !== "true") {
+        stage.dataset.renderIdle = "true";
+        runtimeInfo(null);
+      }
+      // Some WebViews drop the last WebGL frame from the compositor when the
+      // loop stops; a low-frequency refresh keeps the glass shelf on screen
+      // (about one frame every few seconds) without continuous rendering.
+      if (!idleRefreshTimer) {
+        idleRefreshTimer = window.setTimeout(() => {
+          idleRefreshTimer = undefined;
+          if (!document.hidden) wakeScene();
+        }, 2000);
+      }
+    } else if (stage.dataset.renderIdle === "true") {
+      stage.dataset.renderIdle = "false";
+    }
   } else {
     frameCount = 0;
     lastFrame = ms;
   }
-  requestAnimationFrame(frame);
+  if (keepRendering) scheduleFrame();
 }
+
+const wakeOnInput = () => wakeScene();
+for (const type of ["pointerdown", "pointermove", "wheel", "touchstart", "keydown", "click"] as const)
+  document.addEventListener(type, wakeOnInput, { capture: true, passive: true });
+window.addEventListener("resize", wakeOnInput);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) wakeScene();
+});
 async function start() {
   $("#three-scene").dataset.gpuCapability = JSON.stringify(gpuCapability);
   // This local application owns its live index. An old archive PWA must not serve stale UI.
@@ -2247,6 +2334,7 @@ async function start() {
     scene.setTheme(preferences.theme);
     scene.setQuality(renderQuality);
     scene.setReduced(preferences.reduced);
+    if (isMobileShell()) scene.enableMobileRendering();
     bindSceneNavigation(scene);
     $("#music-loading").remove();
     updateSelection();
@@ -2265,10 +2353,8 @@ async function start() {
       $("#music-browse").setAttribute("aria-hidden", String(!albums.length));
     }
     syncSelectionMotion();
-    requestAnimationFrame((ms) => {
-      stage.classList.add("theme-motion-ready");
-      frame(ms);
-    });
+    stage.classList.add("theme-motion-ready");
+    scheduleFrame();
   } catch (error) {
     console.error(error);
     $("#music-loading").innerHTML =
@@ -2307,6 +2393,28 @@ Object.assign(window, {
     },
     get playbackTime() {
       return player.playbackTime;
+    },
+    /** Dynamic-resolution multiplier (0.65–1.0) currently applied on phones. */
+    get renderRatio() {
+      return scene?.renderRatio ?? 1;
+    },
+    /** True while the phone shell has parked the render loop at rest. */
+    get renderIdle() {
+      return !!scene?.renderIdle;
+    },
+    /** Number of rendered scene frames; idle tests compare this over time. */
+    get renderFrames() {
+      return scene?.renderFrames ?? 0;
+    },
+    get renderQuality() {
+      return renderQuality;
+    },
+    setDynamicResolution(enabled: boolean) {
+      scene?.setDynamicResolution(enabled);
+      wakeScene();
+    },
+    wake() {
+      wakeScene();
     },
     stats: () => scene?.getStats(),
     profile: () => ({

@@ -268,6 +268,9 @@ public final class MusicLibrary {
     private final File demoDir;
     private final File downloadDir;
     private final File artworkDir;
+    private final File artworkThumbDir;
+    private final File biliDir;
+    private final File biliInboxDir;
     private final File cacheDir;
 
     private final Object lock = new Object();
@@ -292,6 +295,9 @@ public final class MusicLibrary {
         this.demoDir = new File(files, "demo");
         this.downloadDir = new File(files, "downloads");
         this.artworkDir = new File(dataDir, "artwork");
+        this.artworkThumbDir = new File(dataDir, "artwork-thumb");
+        this.biliDir = new File(files, "bili-media");
+        this.biliInboxDir = new File(files, "bili-inbox");
         this.cacheDir = new File(this.context.getCacheDir(), "audio");
         ensureDirs();
     }
@@ -308,11 +314,31 @@ public final class MusicLibrary {
         return artworkDir;
     }
 
+    /** Thumbnails generated for {@code /api/artwork/<id>?w=...}. */
+    public File artworkThumbDir() {
+        return artworkThumbDir;
+    }
+
+    /** Converted Bilibili cache tracks (one {@code .m4a} + sidecar JSON each). */
+    public File biliMediaDir() {
+        return biliDir;
+    }
+
+    /** Staging area for Root/SAF imports before conversion. */
+    public File biliInboxDir() {
+        return biliInboxDir;
+    }
+
     private void ensureDirs() {
         if (!dataDir.isDirectory() && !dataDir.mkdirs()) Log.w(TAG, "cannot create " + dataDir);
         if (!demoDir.isDirectory() && !demoDir.mkdirs()) Log.w(TAG, "cannot create " + demoDir);
         if (!downloadDir.isDirectory() && !downloadDir.mkdirs()) Log.w(TAG, "cannot create " + downloadDir);
         if (!artworkDir.isDirectory() && !artworkDir.mkdirs()) Log.w(TAG, "cannot create " + artworkDir);
+        if (!artworkThumbDir.isDirectory() && !artworkThumbDir.mkdirs()) {
+            Log.w(TAG, "cannot create " + artworkThumbDir);
+        }
+        if (!biliDir.isDirectory() && !biliDir.mkdirs()) Log.w(TAG, "cannot create " + biliDir);
+        if (!biliInboxDir.isDirectory() && !biliInboxDir.mkdirs()) Log.w(TAG, "cannot create " + biliInboxDir);
         if (!cacheDir.isDirectory() && !cacheDir.mkdirs()) Log.w(TAG, "cannot create " + cacheDir);
     }
 
@@ -461,6 +487,7 @@ public final class MusicLibrary {
             Set<String> seen = new HashSet<String>();
             scanDemo(collected, previous, seen);
             scanDownloads(collected, previous, seen);
+            scanBili(collected, previous, seen);
             List<SafRoot> rootsCopy;
             synchronized (lock) {
                 rootsCopy = new ArrayList<SafRoot>(safRoots);
@@ -725,6 +752,93 @@ public final class MusicLibrary {
 
     private void scanDownloads(List<Track> out, Map<String, Track> previous, Set<String> seen) {
         walkMediaFolder(downloadDir, downloadDir, "download", "下载音乐", "下载音乐", out, previous, seen, 0);
+    }
+
+    /**
+     * Indexes files produced by {@link BiliCache}: {@code bili-media/<key>.m4a}
+     * plus its {@code <key>.json} sidecar. The sidecar carries the Bilibili
+     * metadata (title/part/owner/avid/cover) so a rescan never needs the network.
+     */
+    private void scanBili(List<Track> out, Map<String, Track> previous, Set<String> seen) {
+        File[] entries = biliDir.listFiles();
+        if (entries == null) return;
+        List<File> audioFiles = new ArrayList<File>();
+        for (File entry : entries) {
+            if (!entry.isFile()) continue;
+            String lower = entry.getName().toLowerCase(Locale.US);
+            if (lower.endsWith(".m4a") || lower.endsWith(".mp4")) audioFiles.add(entry);
+        }
+        Collections.sort(audioFiles, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                return naturalCompare(a.getName(), b.getName());
+            }
+        });
+        for (File file : audioFiles) {
+            if (!seen.add(file.getAbsolutePath())) continue;
+            JSONObject meta = readBiliMeta(file);
+            Track track = new Track();
+            track.uri = file.getAbsolutePath();
+            track.source = "bili";
+            track.displayName = file.getName();
+            track.size = file.length();
+            track.modified = file.lastModified();
+            track.id = trackId(track.uri);
+            track.format = "M4A";
+            track.browserPlayable = true;
+            Track cached = previous.get(track.identity());
+            if (cached != null) copyMetadata(cached, track);
+            else readTags(track);
+
+            String albumTitle = meta == null ? "" : clean(meta.optString("title"));
+            String part = meta == null ? "" : clean(meta.optString("part"));
+            String artist = meta == null ? "" : clean(meta.optString("artist"));
+            String groupId = meta == null ? "" : clean(meta.optString("groupId"));
+            if (albumTitle.isEmpty()) albumTitle = "B站缓存";
+            if (part.isEmpty()) part = albumTitle;
+            if (artist.isEmpty()) artist = "B站";
+            if (groupId.isEmpty()) groupId = "file:" + stem(file.getName());
+            track.groupKey = "bili|" + groupId;
+            track.folderLabel = "B站缓存";
+            track.folderPath = albumTitle;
+            track.albumTitle = albumTitle;
+            track.title = part;
+            track.artist = artist;
+            track.relativePath = "B站缓存/" + albumTitle + "/" + part;
+            track.artworkKey = meta == null ? "" : clean(meta.optString("artworkKey"));
+            if (meta != null) {
+                long duration = meta.optLong("durationMs", 0);
+                if (duration > 0) track.durationMs = duration;
+                track.trackNumber = meta.optInt("order", track.trackNumber);
+                track.dataPath = meta.optString("sourcePath", track.dataPath);
+            }
+            track.codec = "m4a";
+            out.add(track);
+        }
+    }
+
+    private static JSONObject readBiliMeta(File audio) {
+        String name = audio.getName();
+        int dot = name.lastIndexOf('.');
+        File meta = new File(audio.getParentFile(), (dot > 0 ? name.substring(0, dot) : name) + ".json");
+        if (!meta.isFile()) return null;
+        try {
+            return new JSONObject(readText(meta));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** True once at least one Bilibili cache track is indexed. */
+    public boolean hasBiliTracks() {
+        synchronized (lock) {
+            for (Album album : albums) {
+                for (Track track : album.tracks) {
+                    if ("bili".equals(track.source)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Files and folders below {@code root}; nested folders become albums. */
@@ -1173,11 +1287,18 @@ public final class MusicLibrary {
         String error;
         synchronized (lock) {
             Map<String, Integer> counts = new LinkedHashMap<String, Integer>();
+            boolean hasBili = false;
             for (Album album : albums) {
                 try {
                     albumArray.put(album.toJson(albumOverrides));
                 } catch (JSONException ignored) {
                     // A single broken album must not drop the whole library.
+                }
+                for (Track track : album.tracks) {
+                    if ("bili".equals(track.source)) {
+                        hasBili = true;
+                        break;
+                    }
                 }
                 Integer count = counts.get(album.genreId);
                 counts.put(album.genreId, count == null ? 1 : count + 1);
@@ -1201,6 +1322,7 @@ public final class MusicLibrary {
             }
             rootArray.put(rootJson("内置演示", "online", ""));
             rootArray.put(rootJson("下载音乐", "online", ""));
+            if (hasBili) rootArray.put(rootJson("B站缓存", "online", ""));
             for (SafRoot root : safRoots) {
                 rootArray.put(rootJson(root.label.isEmpty() ? "导入文件夹" : root.label, "online", ""));
             }
@@ -1273,6 +1395,12 @@ public final class MusicLibrary {
             downloads.put("path", "下载音乐");
             downloads.put("status", "online");
             roots.put(downloads);
+            if (hasBiliTracks()) {
+                JSONObject bili = new JSONObject();
+                bili.put("path", "B站缓存");
+                bili.put("status", "online");
+                roots.put(bili);
+            }
             synchronized (lock) {
                 for (SafRoot root : safRoots) {
                     JSONObject entry = new JSONObject();
@@ -1527,7 +1655,8 @@ public final class MusicLibrary {
         return "track-" + sha256Hex(uri).substring(0, 24);
     }
 
-    private String cacheArtwork(byte[] bytes) {
+    /** Stores artwork bytes under a content hash and returns the cache key. */
+    public String cacheArtwork(byte[] bytes) {
         if (bytes == null || bytes.length == 0) return "";
         try {
             String extension = ".jpg";

@@ -29,12 +29,26 @@ export class ScaledBokehPass extends BokehPass {
     toneMapped: false,
   });
   private readonly copyQuad = new FullScreenQuad(this.copyMaterial);
+  private bufferScale = 1;
+  private fullWidth = 1;
+  private fullHeight = 1;
 
   get bufferWidth() { return this.scaledTarget.width; }
   get bufferHeight() { return this.scaledTarget.height; }
 
+  /** Phones run the depth+blur at half resolution; the effect is a blur, so the
+   * loss is invisible at phone size while the pixel cost drops to ~25%. */
+  setBufferScale(scale: number) {
+    const next = Math.min(1, Math.max(0.25, scale));
+    if (next === this.bufferScale) return;
+    this.bufferScale = next;
+    this.setSize(this.fullWidth, this.fullHeight);
+  }
+
   override setSize(width: number, height: number) {
-    const scale = auxiliaryResolutionScale(1, width, height);
+    this.fullWidth = width;
+    this.fullHeight = height;
+    const scale = auxiliaryResolutionScale(this.bufferScale, width, height);
     const scaledWidth = Math.max(1, Math.floor(width * scale));
     const scaledHeight = Math.max(1, Math.floor(height * scale));
     super.setSize(scaledWidth, scaledHeight);

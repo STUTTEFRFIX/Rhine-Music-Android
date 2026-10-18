@@ -6,7 +6,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
-import { normalizeQuality, type RenderQuality } from "./render-quality";
+import { auxiliaryResolutionScale, MIN_DYNAMIC_RENDER_SCALE, normalizeQuality, type RenderQuality } from "./render-quality";
 import { applyTextureQuality, resizeQuality } from "./quality-renderer";
 import { CardAppearance } from "./appearance";
 import { configureInternalOptics } from "./internal-optics";
@@ -18,7 +18,6 @@ import { MusicCameraMotion, MusicPlacementMotion, MusicPresentation, musicArchiv
 import { MUSIC_CD_ASSET } from "./music-cd-asset";
 import { FrameProfiler } from "./frame-profiler";
 import { ScaledBokehPass } from "./scaled-bokeh-pass";
-import { auxiliaryResolutionScale } from "./render-quality";
 import { MUSIC_MODEL, configureMusicGlass, musicAssemblyPart, normalizeMusicGeometry } from "./music-model";
 import {
   cellKey,
@@ -168,6 +167,27 @@ export class ArchiveScene {
   private aoKernelSize = 32;
   private displayHeight = 0;
   private layoutKind = "";
+  // --- V2 mobile rendering: baked shadows, idle frames, dynamic resolution ---
+  /** Phone shell enables idle frame stopping and dynamic resolution. */
+  private mobileRender = false;
+  private idleFramesEnabled = false;
+  private dynamicResolution = false;
+  private dynamicScale = 1;
+  /** Set once when the GPU cannot hold the floor resolution with full effects. */
+  private lowCostEffects = false;
+  private lowCostApplied = false;
+  private readonly frameDurations: number[] = [];
+  private lastFrameAt = 0;
+  private lastRatioChangeAt = 0;
+  private stillSince = 0;
+  private renderFrameCount = 0;
+  private shadowDirty = true;
+  private shadowWasMoving = false;
+  private cameraSettled = true;
+  /** A calm idle wave is frozen instead of jumping when the loop resumes. */
+  private waveTime = 0;
+  /** Set by the render loop; the app stops scheduling rAF while true. */
+  renderIdle = false;
   onSelect?: (index: number, cell?: ArchiveCell) => void;
   onHover?: (index: number | null) => void;
   onNavigate?: (axis: "row" | "lane", direction: number) => void;
@@ -529,6 +549,8 @@ export class ArchiveScene {
     this.laneFocus = { value: location.lane, velocity: 0 };
     this.columnCamera = { value: (location.lane - 2) * COLUMN_SPACING, velocity: 0 };
     await this.covers.select(records[index]);
+    this.invalidateShadows();
+    this.wake();
   }
 
   enableSelectionLighting() {
@@ -536,6 +558,8 @@ export class ArchiveScene {
     this.appearance.musicLighting = this.selectionLighting;
     this.softenMusicContactShadows();
     this.setTheme(this.theme);
+    this.invalidateShadows();
+    this.wake();
   }
 
   private softenMusicContactShadows() {
@@ -576,6 +600,8 @@ export class ArchiveScene {
     this.themeTransition = animate && !this.reduced && musicLibrary ? targets : undefined;
     if (!this.themeTransition) targets.finish();
     this.syncThemeStars();
+    this.invalidateShadows();
+    this.wake();
   }
 
   private syncThemeStars() {
@@ -723,6 +749,8 @@ export class ArchiveScene {
       this.targetRotation = 0;
       if (this.rotation !== 0) this.returnY = this.model.position.y;
     } else this.returnY = null;
+    this.invalidateShadows();
+    this.wake();
   }
   setReduced(value: boolean) {
     this.reduced = value;
@@ -731,6 +759,59 @@ export class ArchiveScene {
       this.themeTransition = undefined;
       this.syncThemeStars();
     }
+    this.wake();
+    this.invalidateShadows();
+  }
+  /** Phone shell only: baked shadows, stop the loop at rest, adapt resolution. */
+  enableMobileRendering() {
+    this.mobileRender = true;
+    this.idleFramesEnabled = true;
+    this.dynamicResolution = true;
+    this.frameDurations.length = 0;
+    this.lastFrameAt = 0;
+    // Depth of field is a blur: half-resolution buffers are indistinguishable
+    // at phone size and remove the most expensive per-pixel part of the pass.
+    this.bokeh.setBufferScale(0.5);
+    // Re-apply sizes so the diagnostics dataset reports the half-res buffers.
+    this.resize();
+    this.container.dataset.renderRatio = String(this.dynamicScale);
+    this.wake();
+  }
+  /** Exposed for diagnostics (`window.rhineMusic.setDynamicResolution`). */
+  setDynamicResolution(enabled: boolean) {
+    this.dynamicResolution = enabled;
+    this.frameDurations.length = 0;
+    this.lastFrameAt = 0;
+    if (!enabled && this.dynamicScale !== 1) {
+      this.dynamicScale = 1;
+      this.resize();
+    }
+    this.container.dataset.renderRatio = String(this.dynamicScale);
+  }
+  get renderRatio() {
+    return this.dynamicScale;
+  }
+  get renderFrames() {
+    return this.renderFrameCount;
+  }
+  /** Any interaction wakes a stopped render loop and restarts the idle timer. */
+  wake() {
+    if (this.idleFramesEnabled) {
+      // Desktop keeps its original idle breathing: input only resets the timer
+      // on phones, where it also prevents the loop from parking mid-gesture.
+      this.stillSince = 0;
+      this.lastInteraction = this.clock;
+    }
+    this.renderIdle = false;
+    if (this.container.dataset.renderIdle === "true")
+      this.container.dataset.renderIdle = "false";
+  }
+  private invalidateShadows() {
+    this.shadowDirty = true;
+  }
+  /** Pointer motion only affects the idle timer when the phone loop can stop. */
+  private wakeFromInput() {
+    if (this.idleFramesEnabled) this.wake();
   }
   /** The intro has already rendered the archive pose; hand over its same state. */
   finishMusicIntro(nowSeconds: number) {
@@ -753,6 +834,8 @@ export class ArchiveScene {
     this.musicCamera = new MusicCameraMotion();
     this.musicCamera.observe(this.camera, this.cameraAim, 0);
     this.musicPresentation.update(0, true, true, true);
+    this.invalidateShadows();
+    this.wake();
   }
   showMusicArchiveImmediately(nowSeconds: number) {
     if (!musicLibrary || !this.loaded) return;
@@ -794,6 +877,8 @@ export class ArchiveScene {
     } finally {
       this.reduced = reduced;
     }
+    this.invalidateShadows();
+    this.wake();
   }
   setQuality(value: RenderQuality | boolean) {
     const quality =
@@ -988,6 +1073,8 @@ export class ArchiveScene {
         if (coverUpdate) void coverUpdate.then(() => this.profiler.finishAlbumCover(switchProfile));
       }
     }
+    this.invalidateShadows();
+    this.wake();
   }
   private emitPulse(cell: ArchiveCell) {
     this.pulses.push({ ...cell, time: this.clock });
@@ -1038,6 +1125,7 @@ export class ArchiveScene {
       this.composer,
       this.container,
       this.quality,
+      this.dynamicScale,
     );
     const aoScale = auxiliaryResolutionScale(
       this.quality.aoResolution,
@@ -1048,8 +1136,10 @@ export class ArchiveScene {
       Math.max(1, Math.floor(dimensions.width * aoScale)),
       Math.max(1, Math.floor(dimensions.height * aoScale)),
     );
+    this.container.dataset.renderRatio = String(this.dynamicScale);
     this.container.dataset.renderQuality = JSON.stringify({
-      ...JSON.parse(this.container.dataset.renderQuality!),
+      ...JSON.parse(this.container.dataset.renderQuality || "{}"),
+      dynamicScale: this.dynamicScale,
       aoSamples: this.ao.enabled ? this.aoKernelSize : 0,
       aoWidth: this.ao.width,
       aoHeight: this.ao.height,
@@ -1064,6 +1154,92 @@ export class ArchiveScene {
     });
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.invalidateShadows();
+    this.wake();
+  }
+  /**
+   * Rolling frame-time average keeps the phone at >=50 fps by lowering the
+   * internal ratio inside 0.65–1.0 of the user's preset. It never exceeds the
+   * preset, drops in ~1.2 s steps, and only recovers after a stable window.
+   */
+  private measureFrame(time: number) {
+    if (this.lastFrameAt) {
+      const delta = time - this.lastFrameAt;
+      if (delta > 0 && delta < 0.25) {
+        this.frameDurations.push(delta);
+        if (this.frameDurations.length > 90) this.frameDurations.shift();
+      }
+    }
+    this.lastFrameAt = time;
+    if (this.frameDurations.length < 45) return;
+    const now = performance.now();
+    if (now - this.lastRatioChangeAt < 1200) return;
+    const average =
+      this.frameDurations.reduce((sum, value) => sum + value, 0) /
+      this.frameDurations.length;
+    let next = this.dynamicScale;
+    if (average > 1 / 45) {
+      next = Math.max(MIN_DYNAMIC_RENDER_SCALE, this.dynamicScale - 0.1);
+    } else if (average < 1 / 57 && this.frameDurations.length >= 90) {
+      next = Math.min(1, this.dynamicScale + 0.04);
+    }
+    // At the resolution floor, drop the post-processing that dominates fill
+    // rate on weak GPUs instead of letting the archive stutter. This only
+    // updates the flags: the expensive buffers are rebuilt on the next frame,
+    // never in the middle of one.
+    if (
+      !this.lowCostEffects &&
+      this.dynamicScale <= MIN_DYNAMIC_RENDER_SCALE + 0.001 &&
+      average > 1 / 24
+    ) {
+      this.lowCostEffects = true;
+      this.container.dataset.lowCostEffects = "true";
+    }
+    next = Math.round(next * 100) / 100;
+    if (Math.abs(next - this.dynamicScale) < 0.039) return;
+    this.dynamicScale = next;
+    this.lastRatioChangeAt = now;
+    this.frameDurations.length = 0;
+    this.resize();
+  }
+  private updateIdleState(cinematic: boolean) {
+    if (!this.idleFramesEnabled) {
+      this.renderIdle = false;
+      return;
+    }
+    const candidate =
+      this.loaded &&
+      this.renderFrameCount > 90 &&
+      !cinematic &&
+      !this.themeTransition &&
+      !this.dragging &&
+      this.outgoing.length === 0 &&
+      this.returnY === null &&
+      this.pulses.length === 0 &&
+      !this.pendingPulse &&
+      this.musicPlacement.settled &&
+      this.cameraSettled &&
+      (this.musicPresentation.phase === "archive" ||
+        this.musicPresentation.phase === "presented") &&
+      Math.abs(this.lift.velocity) < 0.02 &&
+      Math.abs(this.rail.velocity) < 0.02 &&
+      Math.abs(this.columnCamera.velocity) < 0.02 &&
+      Math.abs(this.shoulder.velocity) < 0.02 &&
+      Math.abs(this.laneFocus.velocity) < 0.02 &&
+      Math.abs(this.rotation - this.targetRotation) < 0.001;
+    if (!candidate) {
+      this.stillSince = 0;
+      this.renderIdle = false;
+      if (this.container.dataset.renderIdle === "true")
+        this.container.dataset.renderIdle = "false";
+      return;
+    }
+    const now = performance.now();
+    if (!this.stillSince) this.stillSince = now;
+    if (!this.renderIdle && now - this.stillSince >= 2500) {
+      this.renderIdle = true;
+      this.container.dataset.renderIdle = "true";
+    }
   }
   private bindPointer() {
     const canvas = this.renderer.domElement;
@@ -1072,6 +1248,7 @@ export class ArchiveScene {
     let activePointer: number | null = null, previousX = 0, started = 0, cancelled = false;
     const pointers = new Set<number>();
     canvas.addEventListener("pointerdown", (e) => {
+      this.wakeFromInput();
       if (e.pointerType === "mouse" && e.button !== 0) return;
       pointers.add(e.pointerId);
       if (pointers.size > 1) { cancelled = true; this.dragging = false; return; }
@@ -1088,6 +1265,7 @@ export class ArchiveScene {
       }
     });
     canvas.addEventListener("pointermove", (e) => {
+      this.wakeFromInput();
       if (activePointer !== null && e.pointerId !== activePointer) return;
       if (cancelled) return;
       const r = canvas.getBoundingClientRect();
@@ -1184,6 +1362,7 @@ export class ArchiveScene {
       this.pointer.set(0, 0);
       this.onHover?.(null);
     });
+    canvas.addEventListener("wheel", () => this.wakeFromInput(), { passive: true });
   }
 
   private instrumentPerformancePasses() {
@@ -1209,6 +1388,23 @@ export class ArchiveScene {
     this.last = time;
     this.clock = time;
     if (!this.loaded) return;
+    // A weak GPU at the resolution floor gets one cheaper effect tier. This
+    // runs before the frame's render pass so the buffers are never rebuilt in
+    // the middle of a draw.
+    if (this.lowCostEffects && !this.lowCostApplied) {
+      this.lowCostApplied = true;
+      this.setQuality({
+        ...this.quality,
+        depthOfField: 0,
+        transmission: 0.5,
+        shadows: 1024,
+      });
+    }
+    this.renderFrameCount++;
+    // A resumed loop uses a capped step, so the idle wave continues from where
+    // it stopped instead of jumping to the absolute RAF phase.
+    this.waveTime += dt;
+    if (this.dynamicResolution) this.measureFrame(time);
     const profiling = this.profiler.enabled;
     const profileStart = profiling ? performance.now() : 0;
     let phaseStart = profileStart;
@@ -1362,7 +1558,7 @@ export class ArchiveScene {
         idleWave(
           row + this.coordinateOrigin.row,
           lane + this.coordinateOrigin.lane,
-          time,
+          this.waveTime,
         ) *
           this.idleGain;
       if (!cinematic && !this.reduced) {
@@ -1721,14 +1917,17 @@ export class ArchiveScene {
       const tracksSettled = musicArchiveTracksSettled(
         { rail: this.rail, column: this.columnCamera, shoulder: this.shoulder, lane: this.laneFocus },
         { rail: -2.17 - chosen.z, column: chosen.x, shoulder: selectedRow, lane: selectedLane });
+      const cameraSettled = this.musicCamera.isSettled(this.camera, this.cameraAim, cameraPosition, cameraAim, framing.span);
       this.musicPresentation.update(dt,
-        this.musicCamera.isSettled(this.camera, this.cameraAim, cameraPosition, cameraAim, framing.span),
+        cameraSettled,
         this.musicPlacement.settled && tracksSettled && Math.abs(this.detail - detailTarget) < 0.001 && Math.abs(this.lift.value - liftTarget) < 0.008 &&
           Math.abs(this.rotation) < 0.001 && Math.abs(this.lift.velocity) < 0.025,
         this.reduced);
+      this.cameraSettled = cameraSettled;
       this.targetDetail = Number(this.musicPresentation.holdsDetail);
       if (this.musicPresentation.phase === "archive") this.musicNavigationLift = false;
     } else {
+      this.cameraSettled = true;
       const cameraBlend = cinematic ? 1 : 1 - Math.exp(-dt * 5);
       this.camera.position.lerp(cameraPosition, cameraBlend);
       this.cameraAim.lerp(cameraAim, cameraBlend);
@@ -1931,14 +2130,21 @@ export class ArchiveScene {
         Math.abs(this.columnCamera.velocity) > 0.01 ||
         Math.abs(this.shoulder.velocity) > 0.01 ||
         Math.abs(this.laneFocus.velocity) > 0.01;
-      // Keep album motion at 30 Hz and the breathing idle shelf at 15 Hz.
-      // Re-rendering a 2048² shadow map on every 60 Hz frame dominated the GPU
-      // even when the array had settled; the WebGL scene still renders every
-      // frame, so only shadow detail uses this bounded update cadence.
-      const refreshEveryFrames = shadowMotion ? 2 : 4;
-      this.renderer.shadowMap.needsUpdate =
-        this.shadowFrameIndex++ % refreshEveryFrames === 0;
+      // Baked shadows: the 2048² map is only re-rendered while casters actually
+      // move (20 Hz on phones, 30 Hz elsewhere), plus one final frame when the
+      // motion stops. A still archive — including the slow idle breathing, whose
+      // maximum displacement is ~0.1 units — reuses the last baked map instead
+      // of re-rendering it every 2–4 frames.
+      const cadence = this.mobileRender ? 3 : 2;
+      const refresh = this.shadowDirty ||
+        (shadowMotion && this.shadowFrameIndex % cadence === 0) ||
+        (this.shadowWasMoving && !shadowMotion);
+      this.renderer.shadowMap.needsUpdate = refresh;
+      if (refresh) this.shadowDirty = false;
+      this.shadowWasMoving = shadowMotion;
+      this.shadowFrameIndex++;
     }
+    this.updateIdleState(Boolean(cinematic));
     if (profiling) {
       const now = performance.now();
       this.profiler.recordScenePhase("render-preparation", now - phaseStart);

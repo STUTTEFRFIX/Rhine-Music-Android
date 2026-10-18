@@ -117,10 +117,29 @@ Android 返回键/返回手势会先调用页面内的 `window.__rhineBack()`，
   处理原生事件、播放时调用 `setKeepAwake`、同步主题、原生模式隐藏桌面专属控件、注册 `__rhineBack`。
 - `src/mobile.css`：只在 `@media (max-width: 700px)` 生效；使用 `--mobile-mini-h`、`env(safe-area-inset-*)` 保证
   刘海屏与手势条安全区；面板统一为全屏上滑 sheet。
-- `src/music-app.ts`：只增加 `import "./mobile.css"` 与 `mountMobileUi(...)` 挂载点，不改变桌面逻辑。
-- `src/cover-atlas.ts`：Android WebView（Chromium 113）拒绝加速 canvas 的 `copyTextureToTexture` 上传，
-  表现为 `GL_INVALID_VALUE: glCopySubTextureCHROMIUM` 且封面全黑。手机 UA 下改为 `getImageData` CPU 回读像素后
-  更新 `DataTexture`（256 px 图块、1024² 选中封面），桌面浏览器仍走 GPU 路径。
+- `src/music-app.ts`：只增加 `import "./mobile.css"` 与 `mountMobileUi(...)` 挂载点，以及手机画质/动效默认值。
+- `src/cover-atlas.ts`：Android WebView **Chromium < 115** 拒绝加速 canvas 的 `copyTextureToTexture` 上传，
+  表现为 `GL_INVALID_VALUE: glCopySubTextureCHROMIUM` 且封面全黑。仅这类旧 WebView（或软件渲染）改为
+  `getImageData` CPU 回读后更新 `DataTexture`；较新的 WebView 保留 GPU 上传路径。手机端图集 tile 128 px，
+  封面请求追加 `&w=512`（原生 `/api/artwork` 支持缩略图），减少解码与上传成本。
+
+### 5.1 网络下载 / B 站缓存（V2）
+
+- Web UI：`src/mobile-network.ts` + `src/mobile-download.css` 提供「网络下载」全屏 sheet（链接解析、下载进度、
+  B 站缓存三种导入方式、历史记录）；`src/mobile-native.ts` 封装 V2 原生桥调用与事件。
+- 原生：
+  - `MediaResolver.java`：直链判定（扩展名 / `HEAD` 的 `Content-Type`）与 B 站链接解析
+    （展开 `b23.tv`，`x/web-interface/view` 取标题/作者/封面/分 P，`x/player/playurl?fnval=16` 取 DASH 音频地址）。
+  - `Net.java`：带 `Referer`/`User-Agent`、重定向、断点续传与重试的下载器。
+  - `BiliCache.java`：扫描/解析 `entry.json` + `audio.m4s`，用 `MediaExtractor` + `MediaMuxer` 把 AAC 音轨
+    封装成 `.m4a` 存入 `files/bili-media/`，写入 `MusicLibrary`（来源「B站缓存」）。
+  - 导入入口：Root（`su -c` 复制 `/data/media/0/Android/data/<bili包名>/download` 到 `files/bili-inbox`）、
+    SAF 选择已导出目录、以及启动时扫描 `files/bili-inbox`。转换幂等：以「原缓存路径 + 文件大小」去重。
+
+| 新增桥方法 | 事件 |
+| --- | --- |
+| `biliStatus()`、`requestRoot()`、`importBilibiliCache()`、`pickBiliFolder()` | `rhine:root`、`rhine:bili` |
+| `resolveLink(url)`、`downloadResolved(url, name, referer)` | `rhine:resolve`、`rhine:download`（沿用） |
 
 ## 6. 权限与安全
 
@@ -136,7 +155,8 @@ Android 返回键/返回手势会先调用页面内的 `window.__rhineBack()`，
 | --- | --- | --- |
 | 宿主 | WinForms + WebView2 | Activity + Android WebView |
 | 音乐服务 | Node.js 子进程 / C# 本地服务 | Java 进程内 `LocalServer` |
-| 曲库来源 | 文件系统目录 | 内置演示 / 下载 / SAF / MediaStore |
+| 曲库来源 | 文件系统目录 | 内置演示 / 下载 / SAF / MediaStore / B 站缓存 |
+| 网络下载 | 无 | 直链 + B 站链接解析、断点续传、带 Referer 下载 |
 | 在线资料（MusicBrainz） | 支持 | 不提供（接口返回 400，相关 UI 隐藏） |
 | foobar2000 / Beefweb | 支持 | 不提供 |
 | 同步歌词 | 支持 | 支持 |

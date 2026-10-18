@@ -7,34 +7,14 @@
  * desktop experience is untouched.
  */
 import { activeLyricIndex, type LyricLine } from "./lyrics";
+import { bridge, nativeAvailable, nativeToast, type Theme } from "./mobile-native";
+import { mountMobileNetwork } from "./mobile-network";
 import type { MusicPlayer, MusicPlayerState } from "./music-player";
 import type { MusicAlbum } from "./music-types";
 
-type Theme = "day" | "dusk" | "night";
+export { nativeAvailable };
+
 type MobilePanel = "library" | "search" | "settings" | "playlists" | "queue" | "lyrics";
-
-/** Contract in docs/MOBILE-ARCHITECTURE.md; every member is optional because
- *  the desktop browser and the Android shell load the same bundle. */
-interface NativeBridge {
-  platform?: () => string;
-  version?: () => string;
-  pickMusicFolder?: () => void;
-  requestAudioPermission?: () => void;
-  hasAudioPermission?: () => boolean;
-  downloadAudio?: (url: string, name: string) => void;
-  cancelDownload?: () => void;
-  rescan?: () => void;
-  toast?: (message: string) => void;
-  setTheme?: (theme: Theme) => void;
-  setKeepAwake?: (awake: boolean) => void;
-  vibrate?: () => void;
-}
-
-declare global {
-  interface Window {
-    RhineNative?: NativeBridge;
-  }
-}
 
 export interface MobileUiOptions {
   stage: HTMLElement;
@@ -98,8 +78,15 @@ const SHELL_MARKUP = `<div class="mobile-now" id="mobile-now" role="dialog" aria
     </button>
   </div>
   <div class="mobile-now-scroll" id="mobile-now-scroll">
-    <div class="mobile-now-cover" id="mobile-now-cover"><span class="mobile-cover-fallback">♪</span></div>
+    <p class="mobile-now-kicker" aria-hidden="true">
+      <span>PLAYBACK TERMINAL</span><i></i><span id="mobile-now-code">RHINE / 00</span>
+    </p>
+    <div class="mobile-now-art">
+      <p class="mobile-now-art-meta" aria-hidden="true"><span>FRONT COVER</span><span>GLASS / 01</span></p>
+      <div class="mobile-now-cover" id="mobile-now-cover"><span class="mobile-cover-fallback">♪</span></div>
+    </div>
     <div class="mobile-now-meta">
+      <small class="mobile-now-meta-overline">NOW PLAYING</small>
       <strong id="mobile-now-title">尚未播放</strong>
       <span id="mobile-now-artist">选择一张专辑开始</span>
     </div>
@@ -161,23 +148,6 @@ const SHELL_MARKUP = `<div class="mobile-now" id="mobile-now" role="dialog" aria
 </div>`;
 
 /* ------------------------------------------------------------------ */
-/* Native bridge                                                       */
-/* ------------------------------------------------------------------ */
-
-function bridge(): NativeBridge | undefined {
-  const candidate = window.RhineNative;
-  return candidate && typeof candidate === "object" ? candidate : undefined;
-}
-
-export function nativeAvailable(): boolean {
-  return !!bridge();
-}
-
-function nativeToast(message: string) {
-  bridge()?.toast?.(message);
-}
-
-/* ------------------------------------------------------------------ */
 /* Mount                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -202,6 +172,7 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
   const nowAlbum = pick<HTMLElement>("mobile-now-album");
   const nowTitle = pick<HTMLElement>("mobile-now-title");
   const nowArtist = pick<HTMLElement>("mobile-now-artist");
+  const nowCode = pick<HTMLElement>("mobile-now-code");
   const nowCover = pick<HTMLElement>("mobile-now-cover");
   const nowCurrent = pick<HTMLElement>("mobile-now-current");
   const nowTotal = pick<HTMLElement>("mobile-now-total");
@@ -216,6 +187,13 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
   const nowLyricStatus = pick<HTMLElement>("mobile-now-lyric-status");
   const nowLyricLines = pick<HTMLElement>("mobile-now-lyric-lines");
   const panelRoot = document.querySelector<HTMLElement>("#music-panel-root");
+  const network = mountMobileNetwork({
+    stage,
+    notify: options.notify,
+    loadLibrary: options.loadLibrary,
+    reduced: options.reduced,
+    isMobile: isMobileShell,
+  });
 
   let state: MusicPlayerState = player.state;
   let lyricKey = "";
@@ -317,6 +295,12 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     if (nowAlbum.textContent !== albumLabel) nowAlbum.textContent = albumLabel;
     if (nowTitle.textContent !== title) nowTitle.textContent = title;
     if (nowArtist.textContent !== artist) nowArtist.textContent = artist;
+    const queueTotal = next.queue.length;
+    const queueIndex = track && next.currentIndex >= 0 ? next.currentIndex + 1 : 0;
+    const code = track
+      ? `TRACK ${String(queueIndex).padStart(2, "0")} / ${String(queueTotal).padStart(2, "0")}`
+      : "RHINE / 00";
+    if (nowCode.textContent !== code) nowCode.textContent = code;
 
     toggleGlyphs(miniToggle, next.playing);
     toggleGlyphs(nowToggle, next.playing);
@@ -347,7 +331,11 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     if (!force && key === lyricKey) return;
     lyricKey = key;
     lyricIndex = -2;
-    nowLyricStatus.textContent = lines.length ? "" : status;
+    nowLyricStatus.textContent = lines.length
+      ? `${lines.length} LINES`
+      : status.length > 12
+        ? "NO LRC"
+        : status;
     nowLyricLines.replaceChildren();
     if (!lines.length) {
       const empty = document.createElement("p");
@@ -590,6 +578,28 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     requestTick();
   });
 
+  /* ----- archive plate: a quiet switch cue on the glass slab ----- */
+
+  const callout = document.querySelector<HTMLElement>(".album-callout");
+  const selectionTitle = document.querySelector<HTMLElement>("#selection-title");
+  let switchTimer = 0;
+  let appliedTitle = selectionTitle?.getAttribute("aria-label") ?? "";
+  if (callout && selectionTitle) {
+    const observer = new MutationObserver(() => {
+      const next = selectionTitle.getAttribute("aria-label") ?? selectionTitle.textContent ?? "";
+      if (next === appliedTitle) return;
+      appliedTitle = next;
+      if (options.reduced()) return;
+      window.clearTimeout(switchTimer);
+      callout.classList.remove("is-switching");
+      // Restart the entrance cue even when two changes land in one frame.
+      void callout.offsetWidth;
+      callout.classList.add("is-switching");
+      switchTimer = window.setTimeout(() => callout.classList.remove("is-switching"), 380);
+    });
+    observer.observe(selectionTitle, { attributes: true, attributeFilter: ["aria-label"] });
+  }
+
   /* ----- native theme sync ----- */
 
   const applyNativeTheme = (theme: string | undefined) => {
@@ -602,16 +612,8 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     if (button?.dataset.theme) applyNativeTheme(button.dataset.theme);
   }, true);
 
-  /* ----- native import / download ----- */
+  /* ----- native import / network entry ----- */
 
-  const download = {
-    running: false,
-    received: 0,
-    total: 0,
-    error: "",
-    done: false,
-    name: "",
-  };
   const views: Array<() => void> = [];
   let importPending = false;
 
@@ -623,26 +625,10 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
         <button type="button" class="mobile-native-primary" data-native-action="import">
           <span class="mobile-native-icon">${glyph.upload}</span>导入手机音乐
         </button>
-        <button type="button" class="mobile-native-primary ghost" data-native-action="download">
-          <span class="mobile-native-icon">${glyph.download}</span>下载音乐
+        <button type="button" class="mobile-native-primary ghost" data-native-action="network">
+          <span class="mobile-native-icon">${glyph.download}</span>网络下载 / B 站缓存
         </button>
       </div>
-      <form class="mobile-download" hidden novalidate>
-        <label for="mobile-download-url-${variant}">音频直链</label>
-        <input id="mobile-download-url-${variant}" name="url" type="url" inputmode="url"
-          autocomplete="off" spellcheck="false" placeholder="https://example.com/track.mp3">
-        <label for="mobile-download-name-${variant}">保存名称（可选）</label>
-        <input id="mobile-download-name-${variant}" name="name" type="text" maxlength="120"
-          autocomplete="off" placeholder="例如 观测室 · 主题">
-        <div class="mobile-download-row">
-          <button type="submit" class="mobile-native-primary">开始下载</button>
-          <button type="button" class="mobile-native-quiet" data-native-action="download-cancel">取消</button>
-        </div>
-        <div class="mobile-download-status" hidden>
-          <progress max="100" value="0"></progress>
-          <span role="status" aria-live="polite"></span>
-        </div>
-      </form>
       <p class="mobile-native-hint" role="status" aria-live="polite"></p>
       ${
         variant === "empty"
@@ -650,45 +636,19 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
           : ""
       }`;
     const note = root.querySelector<HTMLElement>(".mobile-native-note")!;
-    const form = root.querySelector<HTMLFormElement>(".mobile-download")!;
-    const statusBox = root.querySelector<HTMLElement>(".mobile-download-status")!;
-    const bar = root.querySelector<HTMLProgressElement>("progress")!;
-    const statusText = statusBox.querySelector<HTMLElement>("span")!;
     const hint = root.querySelector<HTMLElement>(".mobile-native-hint")!;
-    const urlInput = form.querySelector<HTMLInputElement>('input[name="url"]')!;
-    const nameInput = form.querySelector<HTMLInputElement>('input[name="name"]')!;
 
     views.push(() => {
       const native = bridge();
       note.hidden = false;
       note.textContent = variant === "empty"
-        ? "把手机里的音乐导入这座档案馆，或输入直链下载到 App 的音乐目录。曲目会以专辑卡片出现在这里。"
-        : "从这里导入设备音乐，或下载直链音频，完成后自动刷新曲库。";
-      hint.hidden = !!native;
+        ? "把手机里的音乐导入这座档案馆，或从网络直链 / B 站缓存下载。曲目会以专辑卡片出现在这里。"
+        : "从这里导入设备音乐，或打开网络下载与 B 站缓存。完成后自动刷新曲库。";
+      hint.hidden = false;
       hint.dataset.tone = native ? "ok" : "muted";
       hint.textContent = native
-        ? "原生导入与下载已就绪。"
-        : "在 App 内可用：安装 Rhine Music for Android 后即可导入与下载。";
-      statusBox.hidden = !download.running && !download.error && !download.done;
-      const percent = download.total > 0
-        ? Math.round((download.received / download.total) * 100)
-        : 0;
-      if (download.total > 0) {
-        bar.value = percent;
-        bar.removeAttribute("data-indeterminate");
-      } else {
-        bar.removeAttribute("value");
-        bar.dataset.indeterminate = "true";
-      }
-      statusText.textContent = download.error
-        ? download.error
-        : download.done
-          ? `下载完成：${download.name}`
-          : download.running
-            ? download.total > 0
-              ? `正在下载 ${percent}%`
-              : "正在连接…"
-            : "";
+        ? "原生导入、网络解析与 B 站缓存已就绪。"
+        : "在 App 内可用：浏览器预览不能导入设备音乐或读取 B 站缓存。";
     });
 
     root.addEventListener("click", (event) => {
@@ -696,20 +656,10 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
         .closest<HTMLElement>("[data-native-action]")?.dataset.nativeAction;
       if (!action) return;
       if (action === "import") startImport();
-      else if (action === "download") {
-        form.hidden = !form.hidden;
-        if (!form.hidden) urlInput.focus({ preventScroll: true });
-      } else if (action === "download-cancel") {
-        form.hidden = true;
-        if (download.running) bridge()?.cancelDownload?.();
-      } else if (action === "demo") {
+      else if (action === "network") network.open();
+      else if (action === "demo") {
         document.querySelector<HTMLButtonElement>('#music-empty [data-action="demo"]')?.click();
       }
-    });
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      startDownload(urlInput.value.trim(), nameInput.value.trim());
     });
 
     return root;
@@ -740,33 +690,6 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     native.pickMusicFolder();
   };
 
-  const startDownload = (url: string, name: string) => {
-    const native = bridge();
-    if (!native?.downloadAudio) {
-      options.notify("在 App 内可用：手机 App 支持直链下载音乐。");
-      syncViews();
-      return;
-    }
-    if (!/^https?:\/\//i.test(url)) {
-      options.notify("请输入 http(s) 开头的音频直链。");
-      return;
-    }
-    download.running = true;
-    download.done = false;
-    download.error = "";
-    download.received = 0;
-    download.total = 0;
-    download.name = name || decodeURIComponent(url.split("/").pop() || "audio");
-    syncViews();
-    try {
-      native.downloadAudio(url, name);
-    } catch (error) {
-      download.running = false;
-      download.error = `下载失败：${(error as Error).message}`;
-      syncViews();
-    }
-  };
-
   const emptyHost = document.querySelector<HTMLElement>("#music-empty");
   if (emptyHost) emptyHost.append(createNativeView("empty"));
 
@@ -792,38 +715,6 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
     if (!importPending) return;
     importPending = false;
     bridge()?.pickMusicFolder?.();
-  });
-  document.addEventListener("rhine:download", (event) => {
-    const detail = (event as CustomEvent<{
-      type?: string;
-      received?: number;
-      total?: number;
-      error?: string;
-    }>).detail;
-    if (!detail?.type) return;
-    if (detail.type === "progress") {
-      download.running = true;
-      download.received = Math.max(0, detail.received ?? 0);
-      download.total = Math.max(0, detail.total ?? 0);
-      syncViews();
-      return;
-    }
-    if (detail.type === "error") {
-      download.running = false;
-      download.error = `下载失败：${detail.error || "未知错误"}`;
-      syncViews();
-      options.notify(download.error);
-      return;
-    }
-    if (detail.type === "done") {
-      download.running = false;
-      download.done = true;
-      download.received = detail.total ?? download.received;
-      download.total = detail.total ?? download.received;
-      syncViews();
-      options.notify("下载完成，正在刷新曲库…");
-      void options.loadLibrary(true);
-    }
   });
 
   /* ----- the library sheet gets the same import entry ----- */
@@ -864,6 +755,7 @@ export function mountMobileUi(options: MobileUiOptions): MobileUiHandle {
    * means "the page consumed the gesture", false lets the app close.
    */
   const handleBack = (): boolean => {
+    if (network.close()) return true;
     if (!now.hidden) {
       closeNow();
       return true;

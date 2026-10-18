@@ -4,8 +4,8 @@
 WebView 外壳加载同一套 Web 前端，本地 Java 音乐服务提供与原 Windows 版一致的 REST API，并新增**手机竖屏界面**
 （底部迷你播放条、全屏正在播放、同步歌词、全屏面板）。
 
-- **安装包**：[`release/Rhine-Music-Mobile-1.0.0.apk`](release/Rhine-Music-Mobile-1.0.0.apk)（约 34.6 MB，自签名，可侧载）
-- **包名**：`com.rhine.music` · **版本**：1.0.0（versionCode 1）
+- **安装包**：[`release/Rhine-Music-Mobile-1.1.0.apk`](release/Rhine-Music-Mobile-1.1.0.apk)（约 34.6 MB，自签名，可侧载）
+- **包名**：`com.rhine.music` · **版本**：1.1.0（versionCode 2）
 - **最低系统**：Android 7.0（API 24）· **目标 API**：34
 - **许可**：代码 [MIT](LICENSE)；素材权利见 [NOTICE.md](NOTICE.md)、[NOTICE-ANDROID.md](NOTICE-ANDROID.md)
 
@@ -15,32 +15,41 @@ WebView 外壳加载同一套 Web 前端，本地 Java 音乐服务提供与原 
 
 | 专辑架（暖昼） | 专辑架（深夜） | 专辑详情 |
 | --- | --- | --- |
-| ![专辑架](screenshots/01-album-shelf.png) | ![夜间专辑架](screenshots/02-album-shelf-night.png) | ![专辑详情](screenshots/03-album-detail.png) |
+| ![专辑架](screenshots/01-album-shelf.jpg) | ![夜间专辑架](screenshots/02-album-shelf-night.jpg) | ![专辑详情](screenshots/03-album-detail.jpg) |
 
 | 播放中（迷你条） | 正在播放 | 同步歌词 |
 | --- | --- | --- |
-| ![播放中](screenshots/04-playing-mini.png) | ![正在播放](screenshots/05-now-playing.png) | ![歌词](screenshots/06-lyrics.png) |
+| ![播放中](screenshots/04-playing-mini.jpg) | ![正在播放](screenshots/05-now-playing.jpg) | ![歌词](screenshots/06-lyrics.jpg) |
 
-| 音乐库 | 播放与画质 | 队列 |
+| 音乐库 | 播放与画质 | 网络下载 |
 | --- | --- | --- |
-| ![音乐库](screenshots/08-library.png) | ![设置](screenshots/09-settings.png) | ![队列](screenshots/12-queue.png) |
+| ![音乐库](screenshots/08-library.jpg) | ![设置](screenshots/09-settings.jpg) | ![网络下载](screenshots/13-network-download.jpg) |
+
+| B 站缓存导入 |
+| --- |
+| ![B 站缓存](screenshots/14-bilibili-cache.jpg) |
 
 ## 功能
 
-- **3D 专辑架**：与桌面版同一套 Three.js 场景，竖屏下重新构图，封面卡、标题与导航都在拇指可达区域。
+- **3D 专辑架**：与桌面版同一套 Three.js 场景，竖屏下重新构图：玻璃书架、封面卡、细线标签与滚动编号，
+  信息层是半透明玻璃而不是覆盖画面的白卡。
 - **播放**：专辑「播放全部」、单曲点播、上一首/下一首、停止、随机与队列；底部迷你播放条常驻，点开全屏「正在播放」可拖动进度。
 - **同步歌词**：读取音频同目录同名 `.lrc`，逐行高亮并支持点击跳转；正在播放页内嵌滚动歌词。
 - **三种主题**：暖昼 / 薄暮 / 深夜，系统状态栏与导航栏颜色、图标明暗跟随主题。
-- **音乐来源**（三种，可同时使用）：
+- **音乐来源**（四种，可同时使用）：
   1. **内置演示专辑**：安装后即有「观测室 Observatory」4 首曲目 + 封面 + 歌词，开箱即可播放；
   2. **导入手机音乐**：系统文件夹选择器（SAF）授权后递归扫描，文件夹封面与同名 `.lrc` 一并导入；也可扫描系统媒体库；
-  3. **直链下载**：输入 http(s) 音频直链下载到应用私有目录，完成后自动入库并可播放。
+  3. **网络下载**：顶栏「网络下载」面板，支持音频直链与 B 站视频链接解析（`b23.tv` / `BV` / `av`），
+     解析后显示标题/作者/封面并下载入库；支持重定向、断点续传与 `Referer`；
+  4. **B 站缓存导入**：读取手机哔哩哔哩客户端缓存（`entry.json` + `audio.m4s`），自动把 AAC 音轨转换为可播放的 `.m4a`。
+     三种导入方式：应用内 Root、ADB 导出后选择目录、手动选择已导出文件夹。详见 [docs/BILI-CACHE.md](docs/BILI-CACHE.md)。
 - **歌单**：新建、改名、加曲、排序、移除、删除，持久化在应用私有目录。
-- **画质自适应**：手机默认「性能」预设；检测到软件渲染时进一步降级，桌面布局（≥701 px）保持原样不受影响。
+- **画质与烘焙**：手机默认「手机」画质预设（全设备像素、2048 阴影、柔和景深），仅软件渲染降级到「性能」；
+  静态阴影/环境光只烘焙一次，空闲时降低刷新，帧率不足时自动降低内部渲染比例。详见 [docs/PERF.md](docs/PERF.md)。
 
 ## 安装
 
-1. 下载 [`release/Rhine-Music-Mobile-1.0.0.apk`](release/Rhine-Music-Mobile-1.0.0.apk)；
+1. 下载 [`release/Rhine-Music-Mobile-1.1.0.apk`](release/Rhine-Music-Mobile-1.1.0.apk)；
 2. 传到手机（数据线 / 聊天工具 / 网盘均可），点击安装；
 3. 系统提示「未知来源」时允许该来源安装；
 4. 打开「Rhine Music」。首次启动会请求「音乐和音频」读取权限——允许后才会扫描手机里的音乐；拒绝也不影响内置演示专辑。
@@ -57,7 +66,8 @@ WebView 外壳加载同一套 Web 前端，本地 Java 音乐服务提供与原 
 | 专辑详情 | 点曲目行 | 播放该曲目 |
 | 底部迷你播放条 | 点封面/标题 | 展开全屏「正在播放」 |
 | 正在播放 | 拖动进度条 / 点歌词 | 跳转播放位置 |
-| 顶栏 | 文件夹图标 | 本地音乐库：导入手机音乐、直链下载、查看来源与重新扫描 |
+| 顶栏 | 文件夹图标 | 本地音乐库：导入手机音乐、查看来源与重新扫描 |
+| 顶栏 | 下载图标 | 网络下载：直链 / B 站链接解析下载；B 站缓存 Root/ADB 导入 |
 | 顶栏 | 放大镜 / 歌单 / 顶栏最右 | 搜索 / 歌单 / 播放与画质设置 |
 | 任意界面 | 系统返回手势/返回键 | 关闭面板 → 退出「正在播放」 → 返回专辑架 → 退出应用 |
 
@@ -69,7 +79,7 @@ WebView 外壳加载同一套 Web 前端，本地 Java 音乐服务提供与原 
 ```powershell
 npm ci
 pwsh -File build-web.ps1          # 构建 dist/
-pwsh -File android\build.ps1      # 打包并签名 release/Rhine-Music-Mobile-1.0.0.apk
+pwsh -File android\build.ps1      # 打包并签名 release/Rhine-Music-Mobile-1.1.0.apk
 ```
 
 Android 侧不需要 Gradle：构建脚本直接调用 `aapt2 → javac → d8 → zipalign → apksigner`，
@@ -145,3 +155,5 @@ public/、scripts/、content/、sdk/  上游 Windows 版源码与资源（不删
 - 上游：[RonaldDeng/Rhine-Music-Demo](https://github.com/RonaldDeng/Rhine-Music-Demo)（音乐适配）、[LBEILC/RhineLabUI](https://github.com/LBEILC/RhineLabUI)（三维档案界面基础）、[Bong712/Rhine-Music-Windows](https://github.com/Bong712/Rhine-Music-Windows)（Windows 移植与同步歌词）。
 
 **非代码资源（`.glb` 模型、界面图标、演示封面、MiSans 字体等）不因代码采用 MIT 而自动获得授权。** 详见上述声明文件。
+
+

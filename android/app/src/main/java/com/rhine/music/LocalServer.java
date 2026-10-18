@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,6 +35,7 @@ public final class LocalServer {
     private static final String TAG = "RhineServer";
     private static final int MAX_HEADER_BYTES = 32 * 1024;
     private static final int MAX_BODY_BYTES = 256 * 1024;
+    private static final Object THUMB_LOCK = new Object();
     private static final Map<String, String> MIME = new HashMap<String, String>();
 
     static {
@@ -399,7 +401,7 @@ public final class LocalServer {
                 writeJson(out, 405, error("不支持的请求"));
                 return;
             }
-            serveArtwork(albumId, out, "HEAD".equals(method));
+            serveArtwork(albumId, query, out, "HEAD".equals(method));
             return;
         }
         if (path.startsWith("/api/lyrics/")) {
@@ -490,11 +492,38 @@ public final class LocalServer {
         }
     }
 
-    private void serveArtwork(String albumId, OutputStream out, boolean headOnly) throws IOException {
+    private void serveArtwork(String albumId, String query, OutputStream out, boolean headOnly) throws IOException {
         File artwork = library.artworkFor(albumId);
         if (artwork == null || !artwork.isFile()) {
             writeJson(out, 404, error("此专辑没有封面"));
             return;
+        }
+        int width = 0;
+        String rawWidth = parseQuery(query).get("w");
+        if (rawWidth != null) {
+            try {
+                width = Integer.parseInt(rawWidth.trim());
+            } catch (NumberFormatException ignored) {
+                width = 0;
+            }
+        }
+        if (width >= 32) {
+            File thumbnail = thumbnailFor(artwork, Math.min(width, 1024));
+            if (thumbnail != null && thumbnail.isFile()) {
+                byte[] bytes = MusicLibrary.readBytes(thumbnail);
+                if (bytes != null) {
+                    StringBuilder response = new StringBuilder(256);
+                    response.append("HTTP/1.1 200 OK\r\n");
+                    response.append("Content-Type: image/jpeg\r\n");
+                    response.append("Cache-Control: private, max-age=3600\r\n");
+                    response.append("Content-Length: ").append(bytes.length).append("\r\n");
+                    response.append("Connection: close\r\n\r\n");
+                    out.write(response.toString().getBytes("UTF-8"));
+                    if (!headOnly) out.write(bytes);
+                    out.flush();
+                    return;
+                }
+            }
         }
         byte[] bytes = MusicLibrary.readBytes(artwork);
         if (bytes == null) {
@@ -510,6 +539,86 @@ public final class LocalServer {
         out.write(response.toString().getBytes("UTF-8"));
         if (!headOnly) out.write(bytes);
         out.flush();
+    }
+
+    /**
+     * Decodes the cover off the UI path, scales it to {@code width} and caches a
+     * JPEG under {@code music-data/artwork-thumb}. Web clients ask for
+     * {@code ?w=512}, which keeps the 3D cover atlas cheap on mobile GPUs.
+     */
+    private File thumbnailFor(File artwork, int width) {
+        String name = artwork.getName();
+        int dot = name.lastIndexOf('.');
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        File target = new File(library.artworkThumbDir(), stem + "-w" + width + ".jpg");
+        if (target.isFile() && target.length() > 0) return target;
+        synchronized (THUMB_LOCK) {
+            if (target.isFile() && target.length() > 0) return target;
+            File temp = new File(target.getParentFile(), target.getName() + ".part");
+            try {
+                android.graphics.BitmapFactory.Options bounds =
+                        new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeFile(artwork.getAbsolutePath(), bounds);
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+                int sample = 1;
+                while (bounds.outWidth / (sample * 2) >= width) sample *= 2;
+                android.graphics.BitmapFactory.Options options =
+                        new android.graphics.BitmapFactory.Options();
+                options.inSampleSize = sample;
+                android.graphics.Bitmap decoded =
+                        android.graphics.BitmapFactory.decodeFile(artwork.getAbsolutePath(), options);
+                if (decoded == null) return null;
+                int targetWidth = Math.min(width, decoded.getWidth());
+                int targetHeight = Math.max(1,
+                        Math.round(decoded.getHeight() * (targetWidth / (float) decoded.getWidth())));
+                android.graphics.Bitmap scaled = (targetWidth == decoded.getWidth()
+                        && targetHeight == decoded.getHeight())
+                        ? decoded
+                        : android.graphics.Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true);
+                boolean written;
+                FileOutputStream output = new FileOutputStream(temp);
+                try {
+                    written = scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, output);
+                    if (written) output.getFD().sync();
+                } finally {
+                    output.close();
+                }
+                if (scaled != decoded) scaled.recycle();
+                decoded.recycle();
+                if (!written) {
+                    if (!temp.delete()) Log.w(TAG, "cannot delete " + temp);
+                    return null;
+                }
+                if (target.exists() && !target.delete()) return null;
+                if (!temp.renameTo(target)) {
+                    if (!temp.delete()) Log.w(TAG, "cannot delete " + temp);
+                    return null;
+                }
+                return target;
+            } catch (Throwable failure) {
+                Log.w(TAG, "cannot build thumbnail for " + artwork.getName(), failure);
+                if (temp.exists() && !temp.delete()) Log.w(TAG, "cannot delete " + temp);
+                return null;
+            }
+        }
+    }
+
+    private static Map<String, String> parseQuery(String query) {
+        Map<String, String> values = new HashMap<String, String>();
+        if (query == null || query.isEmpty()) return values;
+        for (String part : query.split("&")) {
+            if (part.isEmpty()) continue;
+            int equals = part.indexOf('=');
+            String key = equals >= 0 ? part.substring(0, equals) : part;
+            String value = equals >= 0 ? part.substring(equals + 1) : "";
+            try {
+                values.put(URLDecoder.decode(key, "UTF-8"), URLDecoder.decode(value, "UTF-8"));
+            } catch (Exception ignored) {
+                values.put(key, value);
+            }
+        }
+        return values;
     }
 
     private static long[] parseRange(String header, long size) {

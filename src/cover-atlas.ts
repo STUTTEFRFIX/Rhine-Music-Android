@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { MusicSelectionLighting } from "./music-lighting";
 import type { ArchiveRecord } from "./data";
 import { MUSIC_COVER, createAlbumPrintMaterial } from "./music-model.ts";
+import { isSoftwareWebGL } from "./gpu-capability.ts";
 
 // Print on the glass surface. No transmitting/frosted layer sits over the image.
 export const COVER_SIZE = MUSIC_COVER;
@@ -110,14 +111,37 @@ function paintCover(
   );
 }
 
+const coverAtlasEnvironment = (() => {
+  if (typeof navigator === "undefined") return { android: false, chrome: 0, compact: false };
+  const match = /Chrome\/(\d+)/.exec(navigator.userAgent);
+  return {
+    android: /Android/i.test(navigator.userAgent),
+    chrome: match ? Number(match[1]) : 0,
+    compact:
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 700px)").matches,
+  };
+})();
+
 /**
- * Android WebView (Chromium 113 shipped with some system images) rejects the
- * GPU canvas-to-atlas tile copy with GL_INVALID_VALUE and leaves the atlas
- * black, so those devices paint tiles through a CPU readback instead. The
- * readback only touches 256 px tiles and keeps covers visible on phones.
+ * Android WebView before Chromium 115 rejects the GPU canvas-to-atlas tile copy
+ * with GL_INVALID_VALUE and leaves the atlas black, so those devices paint tiles
+ * through a CPU readback instead. Newer WebViews (and every phone that keeps its
+ * WebView updated) keep the fast GPU path.
  */
 const prefersCpuAtlasCopy =
-  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+  coverAtlasEnvironment.android &&
+  coverAtlasEnvironment.chrome > 0 &&
+  coverAtlasEnvironment.chrome < 115;
+
+/**
+ * Phones only need a smaller atlas tile, and their covers are requested as
+ * ~512 px thumbnails: decoding and uploading less art is the cheapest mobile
+ * win and keeps the cover pipeline off the critical path.
+ */
+const COVER_TILE_SIZE = coverAtlasEnvironment.compact ? 128 : 256;
+const COVER_REQUEST_WIDTH = coverAtlasEnvironment.compact ? 512 : 0;
 
 /** One fixed-size atlas for the visible pool, regardless of total library size. */
 export class CoverAtlas {
@@ -133,6 +157,8 @@ export class CoverAtlas {
   /** Set on Android: tiles and the selected card upload from CPU pixels. */
   private readonly selectedPixels: Uint8Array | undefined;
   private readonly tileSource: THREE.CanvasTexture;
+  /** Legacy Android WebView or a software GL stack: upload tiles from pixels. */
+  private readonly cpuAtlasCopy: boolean;
   private readonly pendingImages = new Map<string, Promise<CoverImage | undefined>>();
   private readonly decodedImages = new Map<string, CoverImage | undefined>();
   private readonly imageErrors = new Map<string, string>();
@@ -160,7 +186,10 @@ export class CoverAtlas {
   constructor(count: number, maxTextureSize: number, anisotropy: number, lighting?: MusicSelectionLighting, renderer?: THREE.WebGLRenderer, profilePhase?: (name: string, durationMs: number) => void) {
     this.renderer = renderer;
     this.profilePhase = profilePhase;
-    this.tileWidth = Math.min(256, Math.max(1, maxTextureSize));
+    // A software rasterizer emulates accelerated canvas uploads, so keep the
+    // pixel path there too even when the WebView itself is new enough.
+    this.cpuAtlasCopy = prefersCpuAtlasCopy || isSoftwareWebGL(renderer);
+    this.tileWidth = Math.min(COVER_TILE_SIZE, Math.max(1, maxTextureSize));
     this.tileHeight = this.tileWidth;
     // Use ordinary 2D texture pages: WebGL's normal map path is well tested by
     // CanvasTexture on the target adapter, while custom sampler2DArray sampling
@@ -177,11 +206,11 @@ export class CoverAtlas {
     // software and makes canvas-to-texture uploads much slower.
     this.tileContext = this.tileCanvas.getContext(
       "2d",
-      prefersCpuAtlasCopy ? { willReadFrequently: true } : undefined,
+      this.cpuAtlasCopy ? { willReadFrequently: true } : undefined,
     )!;
     this.selectedContext = this.selectedCanvas.getContext(
       "2d",
-      prefersCpuAtlasCopy ? { willReadFrequently: true } : undefined,
+      this.cpuAtlasCopy ? { willReadFrequently: true } : undefined,
     )!;
     this.atlasCopyRegion = new THREE.Box2(
       new THREE.Vector2(0, 0),
@@ -197,7 +226,7 @@ export class CoverAtlas {
     this.slotRecords = Array(count);
     this.slotMatrices = Array.from({ length: count }, () => new THREE.Matrix4());
     this.visibleSlots = new Uint8Array(count);
-    if (prefersCpuAtlasCopy) {
+    if (this.cpuAtlasCopy) {
       const pixels = new Uint8Array(COVER_PAINT_SIZE * COVER_PAINT_SIZE * 4);
       this.selectedPixels = pixels;
       this.selectedTexture = this.createTexture(
@@ -363,7 +392,7 @@ export class CoverAtlas {
   private writePageTile(page: AtlasPage, slot: number) {
     const x = (slot % this.pageColumns) * this.tileWidth;
     const y = Math.floor(slot / this.pageColumns) * this.tileHeight;
-    if (this.renderer && !prefersCpuAtlasCopy) {
+    if (this.renderer && !this.cpuAtlasCopy) {
       const uploadStartedAt = this.profilePhase ? performance.now() : 0;
       this.atlasCopyPosition.set(x, y);
       this.renderer.copyTextureToTexture(
@@ -377,7 +406,10 @@ export class CoverAtlas {
       // Keep the non-renderer fallback correct for lightweight diagnostics.
       // The interactive WebGL path never reads pixels back from this canvas.
       page.texture.flipY = false;
+      const readStartedAt = this.profilePhase ? performance.now() : 0;
       const pixels = this.tileContext.getImageData(0, 0, this.tileWidth, this.tileHeight).data;
+      if (this.profilePhase) this.profilePhase("atlas-canvas-readback", performance.now() - readStartedAt);
+      const copyStartedAt = this.profilePhase ? performance.now() : 0;
       const atlasWidth = this.pageColumns * this.tileWidth;
       const rowBytes = this.tileWidth * 4;
       for (let row = 0; row < this.tileHeight; row++) {
@@ -386,6 +418,7 @@ export class CoverAtlas {
         page.data.set(pixels.subarray(source, source + rowBytes), destination);
       }
       page.texture.needsUpdate = true;
+      if (this.profilePhase) this.profilePhase("atlas-texture-upload", performance.now() - copyStartedAt);
     }
   }
 
@@ -486,25 +519,49 @@ export class CoverAtlas {
     let pending = this.pendingImages.get(url);
     if (!pending) {
       const generation = this.generation;
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-      image.src = url;
-      pending = image
-        .decode()
-        .then(() => {
-          // Retain bounded thumbnails, not decoded multi-megapixel source art.
-          const width = image.naturalWidth,
-            height = image.naturalHeight;
-          const scale = Math.min(1, 1024 / Math.max(width, height));
-          const source = document.createElement("canvas");
-          source.width = Math.max(1, Math.round(width * scale));
-          source.height = Math.max(1, Math.round(height * scale));
-          source
-            .getContext("2d")!
-            .drawImage(image, 0, 0, source.width, source.height);
-          image.src = "";
-          return { source, width, height };
-        })
+      // Phones ask native V2 for a ~512 px thumbnail. A server that does not
+      // know `w` ignores the unknown query parameter; if it rejects the request
+      // outright, fall back to the original URL once.
+      const requestUrl = (() => {
+        if (COVER_REQUEST_WIDTH <= 0) return url;
+        try {
+          const parsed = new URL(url, location.href);
+          if (!/\/api\/artwork\//.test(parsed.pathname)) return url;
+          parsed.searchParams.set("w", String(COVER_REQUEST_WIDTH));
+          return parsed.origin === location.origin
+            ? `${parsed.pathname}${parsed.search}`
+            : parsed.href;
+        } catch {
+          return url;
+        }
+      })();
+      const decode = (src: string) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.src = src;
+        return image.decode().then(() => image);
+      };
+      pending = (async () => {
+        let image: HTMLImageElement;
+        try {
+          image = await decode(requestUrl);
+        } catch (error) {
+          if (requestUrl === url) throw error;
+          image = await decode(url);
+        }
+        // Retain bounded thumbnails, not decoded multi-megapixel source art.
+        const width = image.naturalWidth,
+          height = image.naturalHeight;
+        const scale = Math.min(1, 1024 / Math.max(width, height));
+        const source = document.createElement("canvas");
+        source.width = Math.max(1, Math.round(width * scale));
+        source.height = Math.max(1, Math.round(height * scale));
+        source
+          .getContext("2d")!
+          .drawImage(image, 0, 0, source.width, source.height);
+        image.src = "";
+        return { source, width, height };
+      })()
         .catch((error: unknown) => {
           this.imageErrors.set(url, error instanceof Error ? error.message : String(error));
           return undefined;

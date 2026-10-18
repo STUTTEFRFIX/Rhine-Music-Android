@@ -23,6 +23,25 @@ export const qualityPresets = {
     transmission: 0.5,
     anisotropy: 4,
   },
+  /**
+   * Phone default: keeps the glass archive look — above-CSS render resolution,
+   * baked 2048 shadows, glass refraction and soft depth of field — while
+   * skipping the screen-space AO pass. Dynamic resolution and idle frames keep
+   * it affordable; a weak GPU can still drop to the performance preset.
+   */
+  mobile: {
+    scale: 100,
+    // 1.5x CSS pixels: visibly sharper than the old performance preset
+    // (1x at 80%), and still within reach of mid-range phone GPUs.
+    pixelRatio: 1.5,
+    antialias: "off",
+    shadows: 2048,
+    aoSamples: 0,
+    aoResolution: 0.5,
+    depthOfField: 40,
+    transmission: 0.75,
+    anisotropy: 8,
+  },
   original: {
     scale: 100,
     // Keep up to the physical device-pixel ratio. On 4K Windows displays at
@@ -63,6 +82,14 @@ export type QualityPreset = keyof typeof qualityPresets;
 // Post-processing buffers are secondary to the final image. At 4K, a 2 MP cap
 // keeps useful detail while avoiding another full-size color/depth target.
 export const MAX_AUXILIARY_BUFFER_PIXELS = 1920 * 1080;
+// Dynamic resolution may lower the preset's internal ratio, never raise it.
+export const MIN_DYNAMIC_RENDER_SCALE = 0.5;
+export const MAX_DYNAMIC_RENDER_SCALE = 1;
+export function clampDynamicRenderScale(value: number) {
+  return Number.isFinite(value)
+    ? Math.min(MAX_DYNAMIC_RENDER_SCALE, Math.max(MIN_DYNAMIC_RENDER_SCALE, value))
+    : MAX_DYNAMIC_RENDER_SCALE;
+}
 
 export function auxiliaryResolutionScale(
   requestedScale: number,
@@ -85,6 +112,7 @@ export function transmissionResolutionScale(
 
 export const presetLabels: Record<QualityPreset, string> = {
   performance: "性能",
+  mobile: "手机",
   original: "原始",
   high: "高",
   ultra: "极高",
@@ -156,9 +184,14 @@ export function renderDimensions(
   stageScale: number,
   deviceRatio: number,
   maxTextureSize: number,
+  dynamicScale = MAX_DYNAMIC_RENDER_SCALE,
 ) {
+  const dynamic = clampDynamicRenderScale(dynamicScale);
   const requested =
-    (Math.min(deviceRatio, quality.pixelRatio) * stageScale * quality.scale) /
+    (Math.min(deviceRatio, quality.pixelRatio) *
+      stageScale *
+      quality.scale *
+      dynamic) /
     100;
   // Bound all full-resolution postprocessing targets to 8.3 MP and device limits.
   const ratio = Math.min(
@@ -171,5 +204,6 @@ export function renderDimensions(
     width: Math.max(1, Math.floor(width * ratio)),
     height: Math.max(1, Math.floor(height * ratio)),
     limited: ratio < requested - 0.0001,
+    dynamicScale: dynamic,
   };
 }

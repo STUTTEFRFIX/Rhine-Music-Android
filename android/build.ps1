@@ -17,9 +17,9 @@ $ProgressPreference = 'SilentlyContinue'
 
 $Root    = Split-Path -Parent $MyInvocation.MyCommand.Path   # .../android
 $Project = Split-Path -Parent $Root                           # repository root
-$OutApk  = Join-Path $Project 'release\Rhine-Music-Mobile-1.0.0.apk'
-$VersionCode = 1
-$VersionName = '1.0.0'
+$OutApk  = Join-Path $Project 'release\Rhine-Music-Mobile-1.1.0.apk'
+$VersionCode = 2
+$VersionName = '1.1.0'
 
 function Find-AndroidSdk {
     $candidates = @(

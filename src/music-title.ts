@@ -274,6 +274,14 @@ export function setupMusicTitleLayout(root: HTMLElement) {
     }
     const calloutStyle = getComputedStyle(callout);
     const titleStyle = getComputedStyle(title);
+    // A flex item with `margin-top: auto` resolves to a large pixel value in
+    // getComputedStyle. Counting that as a real margin steals the budget of a
+    // wrapped (two-line) title and clips long album names, so flexible spacing
+    // is bounded to a normal gap here.
+    const spacing = (value: string) => {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? Math.min(16, Math.max(0, parsed)) : 0;
+    };
     const outside = [...callout.children].reduce((sum, element) => {
       if (element === title || element === probe) return sum;
       const style = getComputedStyle(element);
@@ -281,8 +289,8 @@ export function setupMusicTitleLayout(root: HTMLElement) {
       return (
         sum +
         element.getBoundingClientRect().height +
-        Number.parseFloat(style.marginTop) +
-        Number.parseFloat(style.marginBottom)
+        spacing(style.marginTop) +
+        spacing(style.marginBottom)
       );
     }, 0);
     const budget = Math.max(

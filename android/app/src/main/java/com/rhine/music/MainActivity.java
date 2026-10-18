@@ -33,6 +33,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -42,7 +43,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Single-activity WebView shell for Rhine Music on Android.
@@ -57,7 +61,9 @@ public class MainActivity extends Activity {
     private static final String TAG = "RhineMain";
     private static final int REQUEST_TREE = 1001;
     private static final int REQUEST_AUDIO_PERMISSION = 1002;
+    private static final int REQUEST_BILI_TREE = 1003;
     private static final int BACKGROUND_DAY = 0xFFE8E5E1;
+    private static final String APP_VERSION = "1.1.0";
     private static final String DEMO_VERSION = "1.0.0";
 
     private FrameLayout root;
@@ -70,6 +76,11 @@ public class MainActivity extends Activity {
     private volatile boolean downloading;
     private volatile HttpURLConnection downloadConnection;
     private volatile Thread downloadThread;
+    private volatile boolean biliIngesting;
+    private volatile boolean suGranted;
+    private volatile String lastBiliPath = "";
+    private volatile String lastBiliPackages = "[]";
+    private volatile boolean stagedBiliStarted;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -102,6 +113,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 injectShellScript();
+                maybeStartStagedIngest();
             }
 
             @Override
@@ -166,6 +178,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 injectShellScript();
+                maybeStartStagedIngest();
             }
 
             @Override
@@ -230,22 +243,69 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** SAF route for devices without root: pick an exported Bilibili cache folder. */
+    private void pickBiliFolder() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                            | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    startActivityForResult(intent, REQUEST_BILI_TREE);
+                } catch (ActivityNotFoundException missing) {
+                    dispatchBili("error", 0, 0, 0, "此设备没有文件选择器，请用 ADB 把缓存推入后重启应用");
+                }
+            }
+        });
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_TREE || resultCode != RESULT_OK || data == null) return;
+        if (resultCode != RESULT_OK || data == null) return;
         Uri treeUri = data.getData();
         if (treeUri == null) return;
+        if (requestCode != REQUEST_TREE && requestCode != REQUEST_BILI_TREE) return;
         try {
             getContentResolver().takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch (Exception failure) {
             Log.w(TAG, "cannot persist folder permission", failure);
         }
-        String label = folderLabel(treeUri);
-        library.addSafRoot(treeUri.toString(), label);
-        library.requestScan();
-        toast("已导入「" + label + "」，正在扫描");
-        dispatchEvent("rhine:native", "{\"type\":\"imported\"}");
+        if (requestCode == REQUEST_TREE) {
+            String label = folderLabel(treeUri);
+            library.addSafRoot(treeUri.toString(), label);
+            library.requestScan();
+            toast("已导入「" + label + "」，正在扫描");
+            dispatchEvent("rhine:native", "{\"type\":\"imported\"}");
+            return;
+        }
+        final Uri biliUri = treeUri;
+        final String label = folderLabel(treeUri);
+        if (!beginBiliImport("正在读取「" + label + "」")) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File inbox = library.biliInboxDir();
+                    BiliCache.clearDirectory(inbox);
+                    dispatchBili("progress", 0, 0, 0, "正在复制「" + label + "」中的 entry.json / audio.m4s");
+                    int files = BiliCache.copySafTree(MainActivity.this, biliUri, inbox);
+                    if (files == 0) {
+                        dispatchBili("error", 0, 0, 0,
+                                "所选目录中没有 entry.json / audio.m4s。请选择 B 站缓存目录（download 或其子目录）。");
+                        return;
+                    }
+                    lastBiliPath = treePath(biliUri);
+                    runBiliIngest(inbox);
+                } catch (Throwable failure) {
+                    dispatchBili("error", 0, 0, 0, describeFailure(failure));
+                } finally {
+                    endBiliImport();
+                }
+            }
+        }, "rhine-bili-saf").start();
     }
 
     private String folderLabel(Uri treeUri) {
@@ -270,75 +330,170 @@ public class MainActivity extends Activity {
         return "导入文件夹";
     }
 
+    /** Best-effort user-visible path for a SAF tree (for biliStatus.manualPath). */
+    private String treePath(Uri treeUri) {
+        try {
+            String documentId = DocumentsContract.getTreeDocumentId(treeUri);
+            if (documentId.startsWith("primary:")) {
+                return "/sdcard/" + documentId.substring("primary:".length());
+            }
+            if (documentId.startsWith("home:")) {
+                return "/sdcard/Documents/" + documentId.substring("home:".length());
+            }
+        } catch (Exception ignored) {
+            // Fall through to the display name.
+        }
+        return folderLabel(treeUri);
+    }
+
     // ---------------------------------------------------------------- download
 
     private void downloadAudio(final String rawUrl, final String rawName) {
+        downloadAudio(rawUrl, rawName, "");
+    }
+
+    private void downloadAudio(final String rawUrl, final String rawName, final String rawReferer) {
         if (downloading) {
             toast("已有下载任务正在进行");
             return;
         }
         final String url = rawUrl == null ? "" : rawUrl.trim();
         if (!(url.startsWith("http://") || url.startsWith("https://"))) {
-            dispatchEvent("rhine:download", "{\"type\":\"error\",\"error\":\"只支持 http/https 音频直链\"}");
+            dispatchDownload("error", url, 0, 0, "只支持 http/https 音频直链");
             return;
         }
+        final String referer = rawReferer == null ? "" : rawReferer.trim();
         downloading = true;
         downloadThread = new Thread(new Runnable() {
             @Override
             public void run() {
-                HttpURLConnection connection = null;
-                FileOutputStream output = null;
+                String finalUrl = url;
                 File target = null;
+                File part = null;
+                boolean success = false;
+                String errorMessage = "下载失败";
                 try {
-                    String name = sanitizeFileName(rawName, url);
-                    target = uniqueFile(library.downloadDir(), name);
-                    connection = (HttpURLConnection) new URL(url).openConnection();
-                    downloadConnection = connection;
-                    connection.setConnectTimeout(15000);
-                    connection.setReadTimeout(30000);
-                    connection.setInstanceFollowRedirects(true);
-                    connection.setRequestProperty("User-Agent", "RhineMusic/1.0 (Android)");
-                    int status = connection.getResponseCode();
-                    if (status < 200 || status >= 300) {
-                        throw new IOException("服务器返回 " + status);
-                    }
-                    long total = connection.getContentLengthLong();
-                    InputStream input = connection.getInputStream();
-                    output = new FileOutputStream(target);
-                    byte[] buffer = new byte[65536];
-                    long received = 0;
-                    long lastReport = 0;
-                    int count;
-                    while ((count = input.read(buffer)) != -1) {
-                        if (!downloading) throw new IOException("下载已取消");
-                        output.write(buffer, 0, count);
-                        received += count;
-                        long now = System.currentTimeMillis();
-                        if (now - lastReport > 200 || received == total) {
-                            lastReport = now;
-                            dispatchDownload("progress", url, received, total, "");
+                    String provisional = Net.sanitizeFileName(rawName, url);
+                    target = uniqueFile(library.downloadDir(), provisional);
+                    part = new File(target.getParentFile(), target.getName() + ".part");
+                    for (int attempt = 0; attempt < 2 && !success; attempt++) {
+                        if (!downloading) {
+                            errorMessage = "下载已取消";
+                            break;
                         }
-                    }
-                    output.getFD().sync();
-                    output.close();
-                    output = null;
-                    dispatchDownload("done", url, received, total, "");
-                    rescanAndNotify();
-                } catch (Exception failure) {
-                    if (output != null) {
+                        HttpURLConnection connection = null;
+                        FileOutputStream output = null;
                         try {
+                            long existing = part.isFile() ? part.length() : 0;
+                            Map<String, String> extra = new java.util.HashMap<String, String>();
+                            if (existing > 0) extra.put("Range", "bytes=" + existing + "-");
+                            String userAgent = referer.contains("bilibili.com") ? Net.UA_DESKTOP : Net.UA_APP;
+                            String[] resolved = new String[]{url};
+                            connection = Net.connect(url, "GET", referer, userAgent,
+                                    15000, 60000, 6, extra, resolved);
+                            downloadConnection = connection;
+                            finalUrl = resolved[0];
+                            int status = connection.getResponseCode();
+                            if (status == 416 && existing > 0) {
+                                // Stale range: restart from byte 0 once.
+                                connection.disconnect();
+                                connection = null;
+                                if (part.exists() && !part.delete()) {
+                                    throw new IOException("无法清理断点文件");
+                                }
+                                existing = 0;
+                                extra.clear();
+                                resolved[0] = url;
+                                connection = Net.connect(url, "GET", referer, userAgent,
+                                        15000, 60000, 6, extra, resolved);
+                                downloadConnection = connection;
+                                finalUrl = resolved[0];
+                                status = connection.getResponseCode();
+                            }
+                            if (status < 200 || status >= 300) {
+                                throw new IOException("服务器返回 " + status);
+                            }
+                            if (rawName == null || rawName.trim().isEmpty()) {
+                                String disposition = connection.getHeaderField("Content-Disposition");
+                                String fromHeader = Net.headerFilename(disposition);
+                                if (!fromHeader.isEmpty()) {
+                                    File renamed = uniqueFile(library.downloadDir(),
+                                            Net.sanitizeFileName(fromHeader, finalUrl));
+                                    if (!renamed.getAbsolutePath().equals(target.getAbsolutePath())) {
+                                        File moved = new File(renamed.getParentFile(),
+                                                renamed.getName() + ".part");
+                                        if (part.isFile() && part.renameTo(moved)) {
+                                            target = renamed;
+                                            part = moved;
+                                        } else if (!part.isFile()) {
+                                            target = renamed;
+                                            part = moved;
+                                        }
+                                    }
+                                }
+                            }
+                            boolean append = existing > 0 && status == 206;
+                            long contentLength = connection.getContentLengthLong();
+                            long total = contentLength > 0
+                                    ? (append ? existing + contentLength : contentLength) : 0;
+                            InputStream input = connection.getInputStream();
+                            output = new FileOutputStream(part, append);
+                            byte[] buffer = new byte[65536];
+                            long received = append ? existing : 0;
+                            long lastReport = 0;
+                            int count;
+                            while ((count = input.read(buffer)) != -1) {
+                                if (!downloading) throw new IOException("下载已取消");
+                                output.write(buffer, 0, count);
+                                received += count;
+                                long now = System.currentTimeMillis();
+                                if (now - lastReport > 200 || (total > 0 && received >= total)) {
+                                    lastReport = now;
+                                    dispatchDownload("progress", finalUrl, received, total, "");
+                                }
+                            }
+                            output.getFD().sync();
                             output.close();
-                        } catch (IOException ignored) {
-                            // Already failing.
+                            output = null;
+                            try {
+                                input.close();
+                            } catch (IOException ignored) {
+                                // Body already finished.
+                            }
+                            if (target.exists() && !target.delete()) {
+                                throw new IOException("无法覆盖同名文件");
+                            }
+                            if (!part.renameTo(target)) {
+                                throw new IOException("无法保存下载文件");
+                            }
+                            success = true;
+                            dispatchDownload("done", finalUrl, received, total, "");
+                        } catch (Exception failure) {
+                            errorMessage = failure.getMessage() == null ? "下载失败" : failure.getMessage();
+                            if (!downloading) break;
+                            if (attempt == 0) {
+                                try {
+                                    Thread.sleep(700);
+                                } catch (InterruptedException interrupted) {
+                                    Thread.currentThread().interrupt();
+                                    break;
+                                }
+                            }
+                        } finally {
+                            if (output != null) try { output.close(); } catch (IOException ignored) { }
+                            if (connection != null) connection.disconnect();
+                            downloadConnection = null;
                         }
                     }
-                    if (target != null && target.isFile() && !target.delete()) {
-                        Log.w(TAG, "cannot delete partial download");
+                    if (success) {
+                        rescanAndNotify();
+                    } else {
+                        if (part != null && part.isFile() && part.length() == 0 && !part.delete()) {
+                            Log.w(TAG, "cannot delete empty download stub");
+                        }
+                        dispatchDownload("error", finalUrl, 0, 0, errorMessage);
                     }
-                    dispatchDownload("error", url, 0, 0, failure.getMessage() == null ? "下载失败" : failure.getMessage());
                 } finally {
-                    if (connection != null) connection.disconnect();
-                    downloadConnection = null;
                     downloading = false;
                     downloadThread = null;
                 }
@@ -403,6 +558,194 @@ public class MainActivity extends Activity {
                 // Already closed.
             }
         }
+    }
+
+    // ------------------------------------------------------------ bilibili
+
+    private String biliStatusJson() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("rootAvailable", BiliCache.suBinaryExists());
+            json.put("suGranted", suGranted);
+            String manualPath = lastBiliPath;
+            if (manualPath == null || manualPath.isEmpty()) {
+                manualPath = "/sdcard/Download/BiliCache";
+            }
+            json.put("manualPath", manualPath);
+            json.put("entries", BiliCache.countEntries(library.biliInboxDir()));
+            json.put("packages", new JSONArray(lastBiliPackages));
+            json.put("supported", true);
+        } catch (Exception ignored) {
+            // Literal keys only; never fail the bridge.
+        }
+        return json.toString();
+    }
+
+    /** Checks {@code su -c id} on a background thread and reports rhine:root. */
+    private void requestRoot() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                BiliCache.RootCheck check = BiliCache.checkRoot();
+                suGranted = check.granted;
+                if (check.granted) {
+                    List<String> dirs = BiliCache.findCacheDirs();
+                    lastBiliPackages = BiliCache.packagesJson(dirs).toString();
+                    if (!dirs.isEmpty()) lastBiliPath = dirs.get(0);
+                }
+                dispatchRoot(check.granted, check.message);
+            }
+        }, "rhine-root").start();
+    }
+
+    /** Root import: su copy into files/bili-inbox, then the shared ingest pipeline. */
+    private void importBilibiliCache() {
+        if (!beginBiliImport("正在检查 Root 权限")) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    BiliCache.RootCheck check = BiliCache.checkRoot();
+                    suGranted = check.granted;
+                    dispatchRoot(check.granted, check.message);
+                    if (!check.granted) {
+                        dispatchBili("error", 0, 0, 0, "未获得 Root 权限：" + check.message);
+                        return;
+                    }
+                    dispatchBili("progress", 0, 0, 0, "正在定位 B 站缓存目录");
+                    List<String> dirs = BiliCache.findCacheDirs();
+                    lastBiliPackages = BiliCache.packagesJson(dirs).toString();
+                    if (!dirs.isEmpty()) lastBiliPath = dirs.get(0);
+                    if (dirs.isEmpty()) {
+                        dispatchBili("error", 0, 0, 0,
+                                "没有找到 B 站缓存目录。请确认 B 站客户端已经下载视频，"
+                                        + "或改用「选择缓存目录」导入。");
+                        return;
+                    }
+                    dispatchBili("progress", 0, 0, 0,
+                            "正在复制 " + dirs.size() + " 个缓存目录到应用私有目录");
+                    File inbox = library.biliInboxDir();
+                    String stagingError = BiliCache.stageRootDirectories(
+                            dirs, inbox, android.os.Process.myUid());
+                    if (stagingError != null) {
+                        dispatchBili("error", 0, 0, 0, stagingError);
+                        return;
+                    }
+                    runBiliIngest(inbox);
+                } catch (Throwable failure) {
+                    dispatchBili("error", 0, 0, 0, describeFailure(failure));
+                } finally {
+                    endBiliImport();
+                }
+            }
+        }, "rhine-bili-root").start();
+    }
+
+    /** Startup hook: import a previously staged inbox (ADB push + restart). */
+    private void maybeStartStagedIngest() {
+        if (stagedBiliStarted) return;
+        final File inbox = library.biliInboxDir();
+        if (!BiliCache.hasEntries(inbox)) return;
+        stagedBiliStarted = true;
+        if (!beginBiliImport("检测到已暂存的 B 站缓存，正在导入")) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    runBiliIngest(inbox);
+                } catch (Throwable failure) {
+                    dispatchBili("error", 0, 0, 0, describeFailure(failure));
+                } finally {
+                    endBiliImport();
+                }
+            }
+        }, "rhine-bili-staged").start();
+    }
+
+    private boolean beginBiliImport(String message) {
+        synchronized (this) {
+            if (biliIngesting) {
+                toast("B 站缓存导入正在进行");
+                return false;
+            }
+            biliIngesting = true;
+        }
+        dispatchBili("progress", 0, 0, 0, message == null ? "" : message);
+        return true;
+    }
+
+    private void endBiliImport() {
+        synchronized (this) {
+            biliIngesting = false;
+        }
+    }
+
+    /** Shared sink for Root, SAF and staged imports; runs on a worker thread. */
+    private void runBiliIngest(File dir) {
+        BiliCache.Result result = BiliCache.ingest(dir, library, new BiliCache.Listener() {
+            @Override
+            public void onProgress(int copied, int total, int converted, String message) {
+                dispatchBili("progress", copied, total, converted, message);
+            }
+        });
+        if (result.total == 0) {
+            dispatchBili("error", 0, 0, 0, result.message);
+            return;
+        }
+        if (result.copied == 0) {
+            dispatchBili("error", result.copied, result.total, result.converted, result.message);
+            return;
+        }
+        dispatchBili("done", result.copied, result.total, result.converted, result.message);
+        rescanAndNotify();
+    }
+
+    private void resolveLink(final String rawUrl) {
+        final String url = rawUrl == null ? "" : rawUrl.trim();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                JSONObject result;
+                try {
+                    result = MediaResolver.resolve(url);
+                } catch (Throwable failure) {
+                    result = MediaResolver.error("audio", describeFailure(failure));
+                }
+                dispatchEvent("rhine:resolve", result.toString());
+            }
+        }, "rhine-resolve").start();
+    }
+
+    private void dispatchBili(String type, int copied, int total, int converted, String message) {
+        JSONObject detail = new JSONObject();
+        try {
+            detail.put("type", type);
+            detail.put("copied", copied);
+            detail.put("total", total);
+            detail.put("converted", converted);
+            if (message != null && !message.isEmpty()) detail.put("message", message);
+        } catch (Exception ignored) {
+            // Literal keys only.
+        }
+        dispatchEvent("rhine:bili", detail.toString());
+    }
+
+    private void dispatchRoot(boolean granted, String message) {
+        JSONObject detail = new JSONObject();
+        try {
+            detail.put("granted", granted);
+            detail.put("message", message == null ? "" : message);
+        } catch (Exception ignored) {
+            // Literal keys only.
+        }
+        dispatchEvent("rhine:root", detail.toString());
+    }
+
+    private static String describeFailure(Throwable failure) {
+        if (failure == null) return "未知错误";
+        String message = failure.getMessage();
+        return message == null || message.isEmpty()
+                ? failure.getClass().getSimpleName() : message;
     }
 
     // ---------------------------------------------------------------- demo data
@@ -673,7 +1016,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String version() {
-            return DEMO_VERSION;
+            return APP_VERSION;
         }
 
         @JavascriptInterface
@@ -695,6 +1038,36 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void downloadAudio(String url, String name) {
             MainActivity.this.downloadAudio(url, name);
+        }
+
+        @JavascriptInterface
+        public String biliStatus() {
+            return MainActivity.this.biliStatusJson();
+        }
+
+        @JavascriptInterface
+        public void requestRoot() {
+            MainActivity.this.requestRoot();
+        }
+
+        @JavascriptInterface
+        public void importBilibiliCache() {
+            MainActivity.this.importBilibiliCache();
+        }
+
+        @JavascriptInterface
+        public void pickBiliFolder() {
+            MainActivity.this.pickBiliFolder();
+        }
+
+        @JavascriptInterface
+        public void resolveLink(String url) {
+            MainActivity.this.resolveLink(url);
+        }
+
+        @JavascriptInterface
+        public void downloadResolved(String url, String name, String referer) {
+            MainActivity.this.downloadAudio(url, name, referer);
         }
 
         @JavascriptInterface
